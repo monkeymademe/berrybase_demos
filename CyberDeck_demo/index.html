@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CyberNet Node Display</title>
+<style>
+  html,body {margin:0; background:black; overflow:hidden; height:100%; color:#00ffff;}
+  canvas {
+    width:calc(100vw - 400px); 
+    height:100vh;
+    display:block;
+  }
+  .overlay {
+    position:absolute; top:10px; left:10px; font-family:'Courier New', monospace;
+    color:#00ffff; text-shadow:0 0 15px #00ffff, 0 0 30px #00ffff, 0 0 45px #00ffff;
+    font-weight:bold; letter-spacing:2px;
+  }
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1em;
+    background-color: #00ffff;
+    margin-left: 3px;
+    animation: blink 1s infinite;
+    box-shadow: 0 0 8px #00ffff, 0 0 12px #00ffff;
+    vertical-align: middle;
+  }
+  @keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.3; }
+  }
+  .terminal {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 400px;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    border-left: 2px solid #00ffff;
+    box-shadow: -5px 0 20px rgba(0, 255, 255, 0.3);
+    padding: 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #00ffff;
+    overflow-y: auto;
+    overflow-x: hidden;
+    line-height: 1.6;
+    text-shadow: 0 0 5px #00ffff;
+    box-sizing: border-box;
+  }
+  .terminal::-webkit-scrollbar {
+    width: 6px;
+  }
+  .terminal::-webkit-scrollbar-track {
+    background: rgba(0, 255, 255, 0.1);
+  }
+  .terminal::-webkit-scrollbar-thumb {
+    background: rgba(0, 255, 255, 0.5);
+    box-shadow: 0 0 5px #00ffff;
+  }
+  .terminal-line {
+    margin-bottom: 2px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .terminal-prompt {
+    color: #00ff88;
+    display: inline;
+  }
+</style>
+</head>
+<body>
+<canvas id="net"></canvas>
+<div class="overlay" id="info"></div>
+<div class="terminal" id="terminal"></div>
+
+<script>
+const c = document.getElementById("net");
+const ctx = c.getContext("2d");
+const terminalWidth = 400;
+let w = c.width = window.innerWidth - terminalWidth;
+let h = c.height = window.innerHeight;
+
+// Get system hostname with fallback to CYBERDECK
+// Try to get hostname from location (works when accessed via network or local server)
+// For local file:// access, this will fall back to CYBERDECK
+// To see your Mac's hostname, access the page via: http://your-mac-hostname.local
+let systemHostname = 'CYBERDECK';
+if (location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.hostname !== '') {
+  // Remove .local suffix if present and convert to uppercase
+  systemHostname = location.hostname.replace(/\.local$/, '').toUpperCase();
+}
+const systemHostnameLower = systemHostname.toLowerCase();
+
+// Function to generate random node positions with spacing constraints
+function generateNodePositions(nodeCount, minDistance) {
+  const nodes = [];
+  const padding = 80; // Padding from edges
+  const rightPadding = padding + 80; // Padding for node labels (canvas already excludes terminal)
+  const maxAttempts = 100; // Maximum attempts to place a node
+  
+  const nodeNames = [systemHostname, "NODE-A", "NODE-B", "NODE-C", "NODE-D"];
+  
+  // Available width for nodes (just padding for labels, canvas already excludes terminal)
+  const availableWidth = w - rightPadding;
+  
+  for(let i = 0; i < nodeCount; i++) {
+    let attempts = 0;
+    let validPosition = false;
+    let x, y;
+    
+    while(!validPosition && attempts < maxAttempts) {
+      // Divide screen into regions to avoid clumping
+      // Use a quadrant-based approach for better distribution
+      const quadrant = i % 4;
+      let regionX, regionY, regionWidth, regionHeight;
+      
+      if(quadrant === 0) {
+        // Top-left
+        regionX = padding;
+        regionY = padding;
+        regionWidth = w / 2 - padding;
+        regionHeight = h / 2 - padding;
+      } else if(quadrant === 1) {
+        // Top-right
+        regionX = w / 2;
+        regionY = padding;
+        regionWidth = w / 2 - rightPadding;
+        regionHeight = h / 2 - padding;
+      } else if(quadrant === 2) {
+        // Bottom-left
+        regionX = padding;
+        regionY = h / 2;
+        regionWidth = w / 2 - padding;
+        regionHeight = h / 2 - padding;
+      } else {
+        // Bottom-right
+        regionX = w / 2;
+        regionY = h / 2;
+        regionWidth = w / 2 - rightPadding;
+        regionHeight = h / 2 - padding;
+      }
+      
+      x = regionX + Math.random() * regionWidth;
+      y = regionY + Math.random() * regionHeight;
+      
+      // Ensure x position leaves room for node labels (labels are drawn at x+15)
+      // Longest node name is "CYBERDECK" which is ~70px wide at 11px font
+      const maxNodeX = w - rightPadding; // Buffer for labels
+      if(x > maxNodeX) {
+        x = maxNodeX;
+      }
+      
+      // Check if position is far enough from existing nodes
+      validPosition = nodes.every(node => {
+        const distance = Math.sqrt(Math.pow(node.x - x, 2) + Math.pow(node.y - y, 2));
+        return distance >= minDistance;
+      });
+      
+      attempts++;
+    }
+    
+    // If we couldn't find a valid position, use the last generated position anyway
+    // But ensure it's within bounds
+    const maxNodeX = w - rightPadding; // Buffer for labels
+    const fallbackX = x || padding + Math.random() * (maxNodeX - padding);
+    nodes.push({
+      x: Math.min(fallbackX, maxNodeX),
+      y: y || padding + Math.random() * (h - padding * 2),
+      name: nodeNames[i] || `NODE-${String.fromCharCode(65 + i)}`
+    });
+  }
+  
+  return nodes;
+}
+
+const nodes = generateNodePositions(5, 150);
+// Initialize target positions (same as current positions initially)
+nodes.forEach(node => {
+  node.targetX = node.x;
+  node.targetY = node.y;
+  node.animProgress = 1.0; // 1.0 means animation complete
+});
+
+const gridSize = 40;
+const packets = [];
+let time = 0;
+let animationDuration = 2000; // 2 seconds for smooth animation
+let animationStartTime = 0;
+let isAnimating = false;
+
+// Logo image (SVG)
+let logoImage = new Image();
+logoImage.src = 'BerryBase.svg';
+let logoLoaded = false;
+logoImage.onload = () => {
+  logoLoaded = true;
+};
+
+function drawGrid() {
+  ctx.strokeStyle = "rgba(0,255,255,0.08)";
+  ctx.lineWidth = 1;
+  
+  // Vertical lines
+  for(let x = 0; x < w; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+  
+  // Horizontal lines
+  for(let y = 0; y < h; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+}
+
+function drawLogo() {
+  if(!logoLoaded) return;
+  
+  // Calculate size and position - make it larger
+  const maxWidth = Math.min(w * 0.7, h * 0.7); // Scale to 70% of smaller dimension (was 50%)
+  const maxHeight = maxWidth;
+  
+  // Maintain aspect ratio
+  const logoAspect = logoImage.width / logoImage.height;
+  let logoWidth = maxWidth;
+  let logoHeight = maxWidth / logoAspect;
+  
+  if(logoHeight > maxHeight) {
+    logoHeight = maxHeight;
+    logoWidth = maxHeight * logoAspect;
+  }
+  
+  // Center the logo on the node canvas (w and h already exclude terminal area)
+  const logoX = w / 2 - logoWidth / 2;
+  const logoY = h / 2 - logoHeight / 2;
+  
+  // Save context
+  ctx.save();
+  
+  // Create darker glow effect by drawing multiple layers with shadow blur
+  // Draw outer glow layers first (most blurred, darker)
+  ctx.globalAlpha = 0.05; // Further reduced for subtler glow
+  ctx.shadowBlur = 50; // Increased from 40 for more intense glow
+  ctx.shadowColor = '#00ffff'; // Cyan glow color
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
+  
+  // Draw middle glow layer
+  ctx.globalAlpha = 0.07; // Further reduced for darker
+  ctx.shadowBlur = 30; // Increased from 25
+  ctx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
+  
+  // Draw inner glow layer
+  ctx.globalAlpha = 0.09; // Further reduced for darker
+  ctx.shadowBlur = 20; // Increased from 15
+  ctx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
+  
+  // Draw the main logo with preserved colors (increased opacity for better visibility)
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 0.15; // Increased opacity for the logo itself
+  ctx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
+  
+  // Restore context
+  ctx.restore();
+}
+
+function drawGlow(x, y, radius, color, intensity) {
+  const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  gradient.addColorStop(0, color);
+  gradient.addColorStop(0.5, color.replace('1)', '0.3)'));
+  gradient.addColorStop(1, color.replace('1)', '0)'));
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Smooth easing function for animation
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+// Move nodes to new positions smoothly
+function moveNodesToNewPositions() {
+  const newNodes = generateNodePositions(5, 150);
+  
+  nodes.forEach((node, i) => {
+    // Store current position as starting point
+    const startX = node.x;
+    const startY = node.y;
+    
+    // Set new target position
+    node.targetX = newNodes[i].x;
+    node.targetY = newNodes[i].y;
+    node.startX = startX;
+    node.startY = startY;
+    node.animProgress = 0.0;
+  });
+  
+  animationStartTime = Date.now();
+  isAnimating = true;
+}
+
+function draw() {
+  time += 0.01;
+  
+  // Update node positions if animating
+  if(isAnimating) {
+    const elapsed = Date.now() - animationStartTime;
+    const progress = Math.min(elapsed / animationDuration, 1.0);
+    const easedProgress = easeInOutCubic(progress);
+    
+    nodes.forEach(node => {
+      if(node.animProgress < 1.0) {
+        node.animProgress = easedProgress;
+        // Interpolate between start and target positions
+        node.x = node.startX + (node.targetX - node.startX) * easedProgress;
+        node.y = node.startY + (node.targetY - node.startY) * easedProgress;
+      }
+    });
+    
+    // Animation complete
+    if(progress >= 1.0) {
+      isAnimating = false;
+      nodes.forEach(node => {
+        node.x = node.targetX;
+        node.y = node.targetY;
+        node.animProgress = 1.0;
+      });
+    }
+  }
+  
+  // Fade effect instead of clearing completely
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.fillRect(0,0,w,h);
+  
+  // Draw grid
+  drawGrid();
+  
+  // Draw logo as faint overlay behind nodes
+  drawLogo();
+  
+  // Draw glowing connection lines
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = "#00ffff";
+  ctx.lineWidth = 1.5;
+  
+  for(let i=0;i<nodes.length;i++){
+    for(let j=i+1;j<nodes.length;j++){
+      // Create gradient for each line
+      const gradient = ctx.createLinearGradient(nodes[i].x, nodes[i].y, nodes[j].x, nodes[j].y);
+      gradient.addColorStop(0, "rgba(0,255,255,0.4)");
+      gradient.addColorStop(0.5, "rgba(0,255,255,0.6)");
+      gradient.addColorStop(1, "rgba(0,255,255,0.4)");
+      ctx.strokeStyle = gradient;
+      
+      ctx.beginPath();
+      ctx.moveTo(nodes[i].x, nodes[i].y);
+      ctx.lineTo(nodes[j].x, nodes[j].y);
+      ctx.stroke();
+    }
+  }
+  
+  ctx.shadowBlur = 0;
+  
+  // Draw nodes with pulsing glow
+  nodes.forEach((n,i)=>{
+    const pulse = Math.sin(time * 2 + i) * 0.3 + 0.7;
+    const nodeRadius = 8;
+    const glowRadius = nodeRadius * 3 * pulse;
+    
+    // Outer glow
+    drawGlow(n.x, n.y, glowRadius, "rgba(0,255,255,0.4)", pulse);
+    
+    // Inner glow
+    drawGlow(n.x, n.y, glowRadius * 0.6, "rgba(0,255,255,0.6)", pulse);
+    
+    // Core node
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, nodeRadius, 0, Math.PI*2);
+    ctx.fillStyle = "#00ffff";
+    ctx.fill();
+    
+    // Node label with glow
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "#00ffff";
+    ctx.font="11px 'Courier New', monospace";
+    ctx.fillStyle="#00ffff";
+    ctx.fillText(n.name, n.x+15, n.y-12);
+    ctx.shadowBlur = 0;
+  });
+
+  // Spawn packets more slowly and make them more visible
+  if(Math.random()<0.15){
+    const a = nodes[Math.floor(Math.random()*nodes.length)];
+    const b = nodes[Math.floor(Math.random()*nodes.length)];
+    if(a !== b) {
+      // Store node references so packets can follow nodes during animation
+      const p = {sourceNode:a, targetNode:b, t:0, trail:[]};
+      packets.push(p);
+    }
+  }
+
+  // Draw packets with trails
+  packets.forEach(p=>{
+    p.t+=0.008; // Slower movement - was 0.02, now 0.008
+    if(p.t>1){
+      packets.splice(packets.indexOf(p),1);
+      return;
+    }
+    
+    // Use current node positions so packets follow nodes during animation
+    const sourceX = p.sourceNode.x;
+    const sourceY = p.sourceNode.y;
+    const targetX = p.targetNode.x;
+    const targetY = p.targetNode.y;
+    
+    const x = sourceX + (targetX - sourceX) * p.t;
+    const y = sourceY + (targetY - sourceY) * p.t;
+    
+    // Store trail positions
+    p.trail.push({x, y, opacity: 1});
+    if(p.trail.length > 15) p.trail.shift();
+    
+    // Fade trail
+    p.trail.forEach((point, idx) => {
+      point.opacity = idx / p.trail.length;
+    });
+    
+    // Draw trail
+    for(let i = p.trail.length - 1; i > 0; i--) {
+      const curr = p.trail[i];
+      const prev = p.trail[i-1];
+      ctx.strokeStyle = `rgba(0,255,255,${curr.opacity * 0.6})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.lineTo(curr.x, curr.y);
+      ctx.stroke();
+    }
+    
+    // Draw packet with strong glow
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "#00ffff";
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI*2);
+    ctx.fillStyle = "#00ffff";
+    ctx.fill();
+    
+    // Inner bright core
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI*2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+  });
+
+  requestAnimationFrame(draw);
+}
+
+document.getElementById("info").innerHTML = `NODE ID: ${systemHostname}<span class="cursor"></span>`;
+
+// Handle window resize
+window.addEventListener('resize', () => {
+  w = c.width = window.innerWidth - terminalWidth;
+  h = c.height = window.innerHeight;
+  // Nodes will adjust on next reposition, logo will redraw automatically
+});
+
+draw();
+
+// Timer to move nodes to new positions every 10 seconds
+setInterval(() => {
+  if(!isAnimating) {
+    moveNodesToNewPositions();
+  }
+}, 10000); // 10 seconds
+
+// Terminal output system
+const terminalEl = document.getElementById("terminal");
+let terminalLines = [];
+let currentLine = '';
+let currentCharIndex = 0;
+let terminalTime = 0;
+
+// Generate random terminal-like content
+function generateTerminalLine() {
+  const types = ['hex', 'binary', 'command', 'data', 'log'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  
+  let line = '';
+  
+  if(type === 'hex') {
+    // Hexadecimal output
+    for(let i = 0; i < 8; i++) {
+      line += Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase() + ' ';
+    }
+  } else if(type === 'binary') {
+    // Binary output
+    for(let i = 0; i < 6; i++) {
+      line += Math.floor(Math.random() * 256).toString(2).padStart(8, '0') + ' ';
+    }
+  } else if(type === 'command') {
+    // Command-like output
+    const commands = ['scp', 'nmap', 'wget', 'curl', 'netstat', 'traceroute'];
+    const command = commands[Math.floor(Math.random() * commands.length)];
+    const params = Math.floor(Math.random() * 4);
+    line = `$ ${command}`;
+    for(let i = 0; i < params; i++) {
+      const randomStr = Math.random().toString(36).substring(2, 8);
+      line += ` --${randomStr}=${Math.floor(Math.random() * 1000)}`;
+    }
+  } else if(type === 'data') {
+    // Random data stream
+    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!@#$%^&*()';
+    for(let i = 0; i < 40; i++) {
+      line += chars[Math.floor(Math.random() * chars.length)];
+    }
+  } else {
+    // Log-like output
+    const prefixes = ['[INFO]', '[DEBUG]', '[TRACE]', '[WARN]', '[SYNC]'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const randomStr = Math.random().toString(36).substring(2, 15);
+    line = `${prefix} ${randomStr} - ${Math.random().toString(36).substring(2, 20)}`;
+  }
+  
+  return line;
+}
+
+let typingLineEl = null;
+let typingContentEl = null;
+
+function updateTerminal() {
+  terminalTime += 0.05;
+  
+  // Add new line occasionally
+  if(Math.random() < 0.25 && currentLine === '') {
+    const hasPrompt = Math.random() > 0.5;
+    const promptText = `user@${systemHostnameLower}:~$ `;
+    currentLine = hasPrompt ? promptText : '';
+    currentLine += generateTerminalLine();
+    currentCharIndex = 0;
+    
+    // Create new line element
+    typingLineEl = document.createElement('div');
+    typingLineEl.className = 'terminal-line';
+    
+    // If line has a prompt, set it up once and create content container
+    if(currentLine.startsWith(promptText)) {
+      const promptSpan = document.createElement('span');
+      promptSpan.className = 'terminal-prompt';
+      promptSpan.textContent = promptText;
+      typingLineEl.appendChild(promptSpan);
+      
+      // Create container for the content that follows the prompt
+      typingContentEl = document.createTextNode('');
+      typingLineEl.appendChild(typingContentEl);
+      currentCharIndex = promptText.length; // Start after prompt
+    } else {
+      // No prompt, content goes directly in the line
+      typingContentEl = document.createTextNode('');
+      typingLineEl.appendChild(typingContentEl);
+      currentCharIndex = 0;
+    }
+    
+    terminalEl.appendChild(typingLineEl);
+  }
+  
+  // Type out current line character by character
+  if(currentLine.length > 0 && currentCharIndex < currentLine.length) {
+    // Type speed varies slightly for more natural feel (slower)
+    if(Math.random() < 0.6) {
+      // Append just the new character without replacing existing content
+      const charToAdd = currentLine[currentCharIndex];
+      typingContentEl.textContent += charToAdd;
+      
+      currentCharIndex++;
+      
+      // Auto-scroll to bottom
+      terminalEl.scrollTop = terminalEl.scrollHeight;
+    }
+  } else if(currentCharIndex >= currentLine.length && currentLine.length > 0) {
+    // Line complete, start new one
+    currentLine = '';
+    currentCharIndex = 0;
+    typingLineEl = null;
+    typingContentEl = null;
+    
+    // Limit number of lines to prevent memory issues
+    while(terminalEl.children.length > 100) {
+      terminalEl.removeChild(terminalEl.firstChild);
+    }
+  }
+  
+  requestAnimationFrame(updateTerminal);
+}
+
+updateTerminal();
+</script>
+</body>
+</html>
