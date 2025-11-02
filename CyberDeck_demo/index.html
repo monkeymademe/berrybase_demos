@@ -67,11 +67,173 @@
     color: #00ff88;
     display: inline;
   }
+  /* Status panels */
+  .status-panel {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid #00ffff;
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 255, 0.1);
+    padding: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #00ffff;
+    text-shadow: 0 0 5px #00ffff;
+    z-index: 101;
+    min-width: 120px;
+  }
+  .status-panel.top-right {
+    top: 10px;
+    right: 410px;
+  }
+  .status-panel.bottom-left {
+    bottom: 10px;
+    left: 10px;
+  }
+  .status-panel h3 {
+    margin: 0 0 8px 0;
+    font-size: 11px;
+    color: #00ff88;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+    padding-bottom: 4px;
+  }
+  .status-panel .stat {
+    margin: 4px 0;
+    display: flex;
+    justify-content: space-between;
+  }
+  .status-panel .stat-label {
+    color: #00ff88;
+  }
+  .status-panel .stat-value {
+    color: #00ffff;
+    font-weight: bold;
+  }
+  /* Status indicators */
+  .status-indicators {
+    position: absolute;
+    top: 50px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 102;
+    pointer-events: none;
+  }
+  .status-indicator-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-indicator-label {
+    font-family: 'Courier New', monospace;
+    font-size: 9px;
+    color: #00ff88;
+    text-shadow: 0 0 5px #00ff88;
+    letter-spacing: 0.5px;
+    min-width: 70px;
+  }
+  .status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #00ffff;
+    box-shadow: 0 0 8px #00ffff, 0 0 12px #00ffff;
+    flex-shrink: 0;
+  }
+  .status-indicator.pulse {
+    animation: statusPulse 2s ease-in-out infinite;
+  }
+  .status-indicator.fast {
+    animation: statusPulse 1s ease-in-out infinite;
+  }
+  .status-indicator.slow {
+    animation: statusPulse 3s ease-in-out infinite;
+  }
+  @keyframes statusPulse {
+    0%, 100% { 
+      opacity: 1; 
+      transform: scale(1);
+      box-shadow: 0 0 8px #00ffff, 0 0 12px #00ffff;
+    }
+    50% { 
+      opacity: 0.4; 
+      transform: scale(0.8);
+      box-shadow: 0 0 4px #00ffff, 0 0 6px #00ffff;
+    }
+  }
+  .status-indicator.steady {
+    opacity: 1;
+    animation: none;
+  }
+  .status-indicator.warning {
+    background-color: #ffaa00;
+    box-shadow: 0 0 8px #ffaa00, 0 0 12px #ffaa00;
+  }
+  .status-indicator.danger {
+    background-color: #ff0000;
+    box-shadow: 0 0 8px #ff0000, 0 0 12px #ff0000;
+    animation: statusPulse 0.5s ease-in-out infinite;
+  }
 </style>
 </head>
 <body>
 <canvas id="net"></canvas>
 <div class="overlay" id="info"></div>
+<div class="status-panel top-right" id="statusTopRight">
+  <h3>System</h3>
+  <div class="stat">
+    <span class="stat-label">Nodes:</span>
+    <span class="stat-value" id="nodeCount">5</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Connections:</span>
+    <span class="stat-value" id="connectionCount">10</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Packets:</span>
+    <span class="stat-value" id="packetCount">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Uptime:</span>
+    <span class="stat-value" id="uptime">00:00</span>
+  </div>
+</div>
+<div class="status-panel bottom-left" id="statusBottomLeft">
+  <h3>Network</h3>
+  <div class="stat">
+    <span class="stat-label">Active:</span>
+    <span class="stat-value" id="networkStatus">ONLINE</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Latency:</span>
+    <span class="stat-value" id="latency">0ms</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Bandwidth:</span>
+    <span class="stat-value" id="bandwidth">100%</span>
+  </div>
+</div>
+<!-- Status indicator dots -->
+<div class="status-indicators">
+  <div class="status-indicator-group">
+    <span class="status-indicator-label">SYSTEM</span>
+    <div class="status-indicator pulse"></div>
+  </div>
+  <div class="status-indicator-group">
+    <span class="status-indicator-label">NETWORK</span>
+    <div class="status-indicator fast"></div>
+  </div>
+  <div class="status-indicator-group">
+    <span class="status-indicator-label">SYNC</span>
+    <div class="status-indicator slow"></div>
+  </div>
+  <div class="status-indicator-group">
+    <span class="status-indicator-label">NODES</span>
+    <div class="status-indicator pulse"></div>
+  </div>
+</div>
 <div class="terminal" id="terminal"></div>
 
 <script>
@@ -189,6 +351,9 @@ let animationDuration = 2000; // 2 seconds for smooth animation
 let animationStartTime = 0;
 let isAnimating = false;
 
+// System metrics for status panels
+let startTime = Date.now();
+
 // Logo image (SVG)
 let logoImage = new Image();
 logoImage.src = 'BerryBase.svg';
@@ -284,6 +449,34 @@ function drawGlow(x, y, radius, color, intensity) {
 // Smooth easing function for animation
 function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+// Update status panels with current metrics
+function updateStatusPanels() {
+  // Update node count
+  document.getElementById('nodeCount').textContent = nodes.length;
+  
+  // Update connection count
+  const connectionCount = (nodes.length * (nodes.length - 1)) / 2;
+  document.getElementById('connectionCount').textContent = connectionCount;
+  
+  // Update packet count
+  document.getElementById('packetCount').textContent = packets.length;
+  
+  // Update uptime
+  const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+  const minutes = Math.floor(uptimeSeconds / 60);
+  const seconds = uptimeSeconds % 60;
+  document.getElementById('uptime').textContent = 
+    `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  
+  // Update latency (simulated)
+  const latency = Math.floor(20 + Math.random() * 30);
+  document.getElementById('latency').textContent = `${latency}ms`;
+  
+  // Update bandwidth (simulated)
+  const bandwidth = Math.floor(85 + Math.random() * 15);
+  document.getElementById('bandwidth').textContent = `${bandwidth}%`;
 }
 
 // Move nodes to new positions smoothly
@@ -461,6 +654,9 @@ function draw() {
     ctx.fill();
   });
 
+  // Update status panels
+  updateStatusPanels();
+
   requestAnimationFrame(draw);
 }
 
@@ -470,6 +666,8 @@ document.getElementById("info").innerHTML = `NODE ID: ${systemHostname}<span cla
 window.addEventListener('resize', () => {
   w = c.width = window.innerWidth - terminalWidth;
   h = c.height = window.innerHeight;
+  // Update status panel position
+  document.querySelector('.status-panel.top-right').style.right = `${terminalWidth + 10}px`;
   // Nodes will adjust on next reposition, logo will redraw automatically
 });
 
