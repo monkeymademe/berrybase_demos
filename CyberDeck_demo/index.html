@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>CyberNet Node Display</title>
 <style>
-  html,body {margin:0; background:black; overflow:hidden; height:100%; color:#00ffff;}
+  html,body {margin:0; background:black; overflow:hidden; height:100%; color:#3e91be;}
   canvas {
     width:calc(100vw - 400px); 
     height:100vh;
@@ -12,17 +12,17 @@
   }
   .overlay {
     position:absolute; top:10px; left:10px; font-family:'Courier New', monospace;
-    color:#00ffff; text-shadow:0 0 15px #00ffff, 0 0 30px #00ffff, 0 0 45px #00ffff;
+    color:#3e91be; text-shadow:0 0 15px #3e91be, 0 0 30px #3e91be, 0 0 45px #3e91be;
     font-weight:bold; letter-spacing:2px;
   }
   .cursor {
     display: inline-block;
     width: 2px;
     height: 1em;
-    background-color: #00ffff;
+    background-color: #3e91be;
     margin-left: 3px;
     animation: blink 1s infinite;
-    box-shadow: 0 0 8px #00ffff, 0 0 12px #00ffff;
+    box-shadow: 0 0 8px #3e91be, 0 0 12px #3e91be;
     vertical-align: middle;
   }
   @keyframes blink {
@@ -36,27 +36,27 @@
     width: 400px;
     height: 100vh;
     background: rgba(0, 0, 0, 0.7);
-    border-left: 2px solid #00ffff;
-    box-shadow: -5px 0 20px rgba(0, 255, 255, 0.3);
+    border-left: 2px solid #3e91be;
+    box-shadow: -5px 0 20px rgba(62, 145, 190, 0.3);
     padding: 20px;
     font-family: 'Courier New', monospace;
     font-size: 11px;
-    color: #00ffff;
+    color: #3e91be;
     overflow-y: auto;
     overflow-x: hidden;
     line-height: 1.6;
-    text-shadow: 0 0 5px #00ffff;
+    text-shadow: 0 0 5px #3e91be;
     box-sizing: border-box;
   }
   .terminal::-webkit-scrollbar {
     width: 6px;
   }
   .terminal::-webkit-scrollbar-track {
-    background: rgba(0, 255, 255, 0.1);
+    background: rgba(62, 145, 190, 0.1);
   }
   .terminal::-webkit-scrollbar-thumb {
-    background: rgba(0, 255, 255, 0.5);
-    box-shadow: 0 0 5px #00ffff;
+    background: rgba(62, 145, 190, 0.5);
+    box-shadow: 0 0 5px #3e91be;
   }
   .terminal-line {
     margin-bottom: 2px;
@@ -64,20 +64,20 @@
     word-break: break-all;
   }
   .terminal-prompt {
-    color: #00ff88;
+    color: #cd3c65;
     display: inline;
   }
   /* Status panels */
   .status-panel {
     position: absolute;
     background: rgba(0, 0, 0, 0.8);
-    border: 1px solid #00ffff;
-    box-shadow: 0 0 10px rgba(0, 255, 255, 0.5), inset 0 0 10px rgba(0, 255, 255, 0.1);
+    border: 1px solid #3e91be;
+    box-shadow: 0 0 10px rgba(62, 145, 190, 0.5), inset 0 0 10px rgba(62, 145, 190, 0.1);
     padding: 12px;
     font-family: 'Courier New', monospace;
     font-size: 10px;
-    color: #00ffff;
-    text-shadow: 0 0 5px #00ffff;
+    color: #3e91be;
+    text-shadow: 0 0 5px #3e91be;
     z-index: 101;
     min-width: 120px;
   }
@@ -92,10 +92,10 @@
   .status-panel h3 {
     margin: 0 0 8px 0;
     font-size: 11px;
-    color: #00ff88;
+    color: #cd3c65;
     text-transform: uppercase;
     letter-spacing: 1px;
-    border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+    border-bottom: 1px solid rgba(62, 145, 190, 0.3);
     padding-bottom: 4px;
   }
   .status-panel .stat {
@@ -104,10 +104,10 @@
     justify-content: space-between;
   }
   .status-panel .stat-label {
-    color: #00ff88;
+    color: #cd3c65;
   }
   .status-panel .stat-value {
-    color: #00ffff;
+    color: #3e91be;
     font-weight: bold;
   }
   /* Status indicators */
@@ -129,8 +129,8 @@
   .status-indicator-label {
     font-family: 'Courier New', monospace;
     font-size: 9px;
-    color: #00ff88;
-    text-shadow: 0 0 5px #00ff88;
+    color: #cd3c65;
+    text-shadow: 0 0 5px #cd3c65;
     letter-spacing: 0.5px;
     min-width: 70px;
   }
@@ -138,8 +138,8 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background-color: #00ffff;
-    box-shadow: 0 0 8px #00ffff, 0 0 12px #00ffff;
+    background-color: #3e91be;
+    box-shadow: 0 0 8px #3e91be, 0 0 12px #3e91be;
     flex-shrink: 0;
   }
   .status-indicator.pulse {
@@ -155,12 +155,12 @@
     0%, 100% { 
       opacity: 1; 
       transform: scale(1);
-      box-shadow: 0 0 8px #00ffff, 0 0 12px #00ffff;
+      box-shadow: 0 0 8px #3e91be, 0 0 12px #3e91be;
     }
     50% { 
       opacity: 0.4; 
       transform: scale(0.8);
-      box-shadow: 0 0 4px #00ffff, 0 0 6px #00ffff;
+      box-shadow: 0 0 4px #3e91be, 0 0 6px #3e91be;
     }
   }
   .status-indicator.steady {
@@ -363,7 +363,7 @@ logoImage.onload = () => {
 };
 
 function drawGrid() {
-  ctx.strokeStyle = "rgba(0,255,255,0.08)";
+  ctx.strokeStyle = "rgba(62,145,190,0.08)";
   ctx.lineWidth = 1;
   
   // Vertical lines
@@ -411,7 +411,7 @@ function drawLogo() {
   // Draw outer glow layers first (most blurred, darker)
   ctx.globalAlpha = 0.05; // Further reduced for subtler glow
   ctx.shadowBlur = 50; // Increased from 40 for more intense glow
-  ctx.shadowColor = '#00ffff'; // Cyan glow color
+  ctx.shadowColor = '#3e91be'; // Teal glow color
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 0;
   ctx.drawImage(logoImage, logoX, logoY, logoWidth, logoHeight);
@@ -541,16 +541,16 @@ function draw() {
   
   // Draw glowing connection lines
   ctx.shadowBlur = 15;
-  ctx.shadowColor = "#00ffff";
+  ctx.shadowColor = "#3e91be";
   ctx.lineWidth = 1.5;
   
   for(let i=0;i<nodes.length;i++){
     for(let j=i+1;j<nodes.length;j++){
       // Create gradient for each line
       const gradient = ctx.createLinearGradient(nodes[i].x, nodes[i].y, nodes[j].x, nodes[j].y);
-      gradient.addColorStop(0, "rgba(0,255,255,0.4)");
-      gradient.addColorStop(0.5, "rgba(0,255,255,0.6)");
-      gradient.addColorStop(1, "rgba(0,255,255,0.4)");
+      gradient.addColorStop(0, "rgba(62,145,190,0.4)");
+      gradient.addColorStop(0.5, "rgba(62,145,190,0.6)");
+      gradient.addColorStop(1, "rgba(62,145,190,0.4)");
       ctx.strokeStyle = gradient;
       
       ctx.beginPath();
@@ -569,22 +569,22 @@ function draw() {
     const glowRadius = nodeRadius * 3 * pulse;
     
     // Outer glow
-    drawGlow(n.x, n.y, glowRadius, "rgba(0,255,255,0.4)", pulse);
+    drawGlow(n.x, n.y, glowRadius, "rgba(62,145,190,0.4)", pulse);
     
     // Inner glow
-    drawGlow(n.x, n.y, glowRadius * 0.6, "rgba(0,255,255,0.6)", pulse);
+    drawGlow(n.x, n.y, glowRadius * 0.6, "rgba(62,145,190,0.6)", pulse);
     
     // Core node
     ctx.beginPath();
     ctx.arc(n.x, n.y, nodeRadius, 0, Math.PI*2);
-    ctx.fillStyle = "#00ffff";
+    ctx.fillStyle = "#3e91be";
     ctx.fill();
     
     // Node label with glow
     ctx.shadowBlur = 10;
-    ctx.shadowColor = "#00ffff";
+    ctx.shadowColor = "#3e91be";
     ctx.font="11px 'Courier New', monospace";
-    ctx.fillStyle="#00ffff";
+    ctx.fillStyle="#3e91be";
     ctx.fillText(n.name, n.x+15, n.y-12);
     ctx.shadowBlur = 0;
   });
@@ -630,7 +630,7 @@ function draw() {
     for(let i = p.trail.length - 1; i > 0; i--) {
       const curr = p.trail[i];
       const prev = p.trail[i-1];
-      ctx.strokeStyle = `rgba(0,255,255,${curr.opacity * 0.6})`;
+      ctx.strokeStyle = `rgba(62,145,190,${curr.opacity * 0.6})`;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(prev.x, prev.y);
@@ -640,10 +640,10 @@ function draw() {
     
     // Draw packet with strong glow
     ctx.shadowBlur = 20;
-    ctx.shadowColor = "#00ffff";
+    ctx.shadowColor = "#3e91be";
     ctx.beginPath();
     ctx.arc(x, y, 4, 0, Math.PI*2);
-    ctx.fillStyle = "#00ffff";
+    ctx.fillStyle = "#3e91be";
     ctx.fill();
     
     // Inner bright core
