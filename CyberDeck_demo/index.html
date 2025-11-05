@@ -673,12 +673,12 @@ window.addEventListener('resize', () => {
 
 draw();
 
-// Timer to move nodes to new positions every 10 seconds
+// Timer to move nodes to new positions every 5 seconds
 setInterval(() => {
   if(!isAnimating) {
     moveNodesToNewPositions();
   }
-}, 10000); // 10 seconds
+}, 5000); // 5 seconds
 
 // Terminal output system
 const terminalEl = document.getElementById("terminal");
