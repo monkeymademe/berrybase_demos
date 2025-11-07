@@ -15,7 +15,6 @@ warnings.filterwarnings('ignore', message='.*urllib3.*')
 import requests
 import json
 import time
-import os
 from datetime import datetime
 from flight_info import get_flight_route
 
@@ -41,12 +40,13 @@ def get_aircraft(dump1090_url):
 def display_aircraft(data, flight_memory, limit=20, clear_screen=False):
     """Display aircraft information"""
     if not data:
-        return
+        return []
+    
+    # Clear screen if requested (do this BEFORE checking for aircraft)
+    if clear_screen:
+        os.system('clear' if os.name != 'nt' else 'cls')
     
     aircraft = data.get('aircraft', [])
-    if not aircraft:
-        print("No aircraft detected")
-        return
     
     # Filter out aircraft without callsigns
     aircraft_with_callsigns = [ac for ac in aircraft if ac.get('flight', '').strip()]
@@ -54,15 +54,18 @@ def display_aircraft(data, flight_memory, limit=20, clear_screen=False):
     # Filter out stale data (seen > 60 seconds ago)
     recent_aircraft = [ac for ac in aircraft_with_callsigns if ac.get('seen', 999) <= 60]
     
-    # Clear screen if requested
-    if clear_screen:
-        os.system('clear' if os.name != 'nt' else 'cls')
-    
-    # Print header
+    # Print header (always show this, even if no aircraft)
     print(f"{'='*80}")
     print(f"Flight Feed - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Active flights: {len(recent_aircraft)} (from {len(aircraft_with_callsigns)} with callsigns, {len(aircraft)} total)")
     print(f"{'='*80}")
+    
+    # If no recent aircraft, show message and return
+    if not recent_aircraft:
+        print("\nNo flights detected")
+        print(f"\n{'='*80}")
+        print("Press Ctrl+C to exit")
+        return []
     
     # Display recent aircraft (limited)
     for i, ac in enumerate(recent_aircraft[:limit], 1):
@@ -227,4 +230,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
