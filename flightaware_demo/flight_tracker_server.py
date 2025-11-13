@@ -14,7 +14,7 @@ import threading
 import warnings
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from socketserver import TCPServer
+from socketserver import TCPServer, ThreadingMixIn
 from math import radians, sin, cos, sqrt, atan2
 import subprocess
 
@@ -23,19 +23,89 @@ os.environ['PYTHONWARNINGS'] = 'ignore:urllib3'
 warnings.filterwarnings('ignore', message='.*urllib3.*')
 
 import requests
-import websockets
 import subprocess
 
 from flight_info import get_flight_route, get_aircraft_info_adsblol, get_airport_coordinates, get_city_name_from_coordinates
 from airline_logos import get_airline_info
 
+# Try to import Inky display function
+try:
+    from display_inky import display_image_on_inky
+    HAS_INKY_DISPLAY = True
+except ImportError:
+    HAS_INKY_DISPLAY = False
+    print("⚠️  Warning: Inky display not available (display_inky.py not found)")
+
 # Global state
+sse_clients = set()
+sse_clients_lock = threading.Lock()
 flight_memory = {}
 latest_flight_data = None
-websocket_clients = set()
 last_map_generation_time = None  # Track when we last generated a map image
 last_map_flight_icao = None  # Track which flight we last generated a map for
 last_flight_detected_time = None  # Track when we last detected any flight
+map_generation_lock = threading.Lock()  # Lock to prevent concurrent map generation
+map_generation_in_progress = False  # Flag to track if map generation is currently running
+
+SSE_KEEPALIVE_INTERVAL = 15  # seconds between keep-alive comments
+
+
+class SSEClient:
+    """Thread-safe wrapper around an SSE client stream."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.lock = threading.Lock()
+
+    def send(self, payload: bytes):
+        with self.lock:
+            self.stream.write(payload)
+            self.stream.flush()
+
+    def send_message(self, data):
+        message = f"data: {json.dumps(data)}\n\n".encode('utf-8')
+        self.send(message)
+
+    def send_comment(self, comment: str):
+        payload = f": {comment}\n\n".encode('utf-8')
+        self.send(payload)
+
+
+def register_sse_client(stream):
+    """Register a new SSE client and return current client count."""
+    client = SSEClient(stream)
+    with sse_clients_lock:
+        sse_clients.add(client)
+        count = len(sse_clients)
+    return client, count
+
+
+def unregister_sse_client(client):
+    """Unregister an SSE client and return remaining client count."""
+    with sse_clients_lock:
+        sse_clients.discard(client)
+        return len(sse_clients)
+
+
+def broadcast_sse(data):
+    """Broadcast JSON data to all SSE clients."""
+    with sse_clients_lock:
+        if not sse_clients:
+            return
+        clients = list(sse_clients)
+
+    stale_clients = []
+
+    for client in clients:
+        try:
+            client.send_message(data)
+        except Exception:
+            stale_clients.append(client)
+
+    if stale_clients:
+        with sse_clients_lock:
+            for client in stale_clients:
+                sse_clients.discard(client)
 
 def load_config():
     """Load configuration from config.json"""
@@ -73,7 +143,7 @@ def get_aircraft(dump1090_url):
         # Other HTTP errors
         return None
 
-def find_best_flight(enriched_flights, config):
+def find_best_flight(enriched_flights, config, verbose=False):
     """
     Find the best flight to display based on quality criteria
     
@@ -88,6 +158,7 @@ def find_best_flight(enriched_flights, config):
     Args:
         enriched_flights: List of enriched flight dictionaries
         config: Configuration dictionary
+        verbose: If True, log detailed filtering information
     
     Returns:
         dict: Best flight data or None
@@ -99,25 +170,45 @@ def find_best_flight(enriched_flights, config):
     prefer_closest = map_config.get('prefer_closest', True)
     
     candidates = []
+    rejected_reasons = {
+        'no_route': 0,
+        'no_position': 0,
+        'too_far': 0,
+        'too_low': 0
+    }
     
     for flight in enriched_flights:
+        callsign = flight.get('callsign', flight.get('icao', 'Unknown'))
+        
         # Must have route if required
         if require_route:
             if not flight.get('origin') or not flight.get('destination'):
+                rejected_reasons['no_route'] += 1
+                if verbose:
+                    print(f"  ❌ {callsign}: No route (origin: {flight.get('origin')}, dest: {flight.get('destination')})")
                 continue
         
         # Must have position
         if flight.get('lat') is None or flight.get('lon') is None:
+            rejected_reasons['no_position'] += 1
+            if verbose:
+                print(f"  ❌ {callsign}: No position data")
             continue
         
         # Check distance requirement
         distance = flight.get('distance')
         if distance is not None and distance > max_distance:
+            rejected_reasons['too_far'] += 1
+            if verbose:
+                print(f"  ❌ {callsign}: Too far ({distance:.1f}km > {max_distance}km)")
             continue
         
         # Check altitude requirement
         altitude = flight.get('altitude')
         if altitude is not None and altitude < min_altitude:
+            rejected_reasons['too_low'] += 1
+            if verbose:
+                print(f"  ❌ {callsign}: Too low ({altitude}ft < {min_altitude}ft)")
             continue
         
         # Score the flight (higher is better)
@@ -174,6 +265,15 @@ def find_best_flight(enriched_flights, config):
         
         candidates.append((score, flight))
     
+    # Log rejection reasons if no candidates found
+    if not candidates and enriched_flights:
+        total_flights = len(enriched_flights)
+        routes_count = sum(1 for f in enriched_flights if f.get('origin') and f.get('destination'))
+        print(f"⚠️  Map generation: No flights meet criteria (total: {total_flights}, with routes: {routes_count})")
+        if sum(rejected_reasons.values()) > 0:
+            print(f"   Rejected: {rejected_reasons['no_route']} no route, {rejected_reasons['no_position']} no position, "
+                  f"{rejected_reasons['too_far']} too far, {rejected_reasons['too_low']} too low")
+    
     if not candidates:
         return None
     
@@ -181,8 +281,8 @@ def find_best_flight(enriched_flights, config):
     candidates.sort(key=lambda x: x[0], reverse=True)
     best_score, best_flight = candidates[0]
     
-    # Log the selection (only if there are multiple candidates or score is notable)
-    if len(candidates) > 1:
+    # Log the selection
+    if verbose or len(candidates) > 1:
         print(f"📊 Flight selection: {best_flight.get('callsign', best_flight.get('icao', 'Unknown'))} selected "
               f"(score: {best_score}, distance: {best_flight.get('distance', 'N/A'):.1f}km, "
               f"altitude: {best_flight.get('altitude', 'N/A')}ft) from {len(candidates)} candidates")
@@ -212,20 +312,34 @@ def should_generate_map(enriched_flights, config):
     min_interval = map_config.get('min_interval_seconds', 300)  # Default 5 minutes
     
     # Check if image file exists and how old it is
-    map_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_map.png')
+    map_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inky_ready.png')
     image_exists = os.path.exists(map_file)
     
-    # Find best flight candidate
-    best_flight = find_best_flight(enriched_flights, config)
+    # Find best flight candidate with detailed diagnostics
+    # Track calls to provide periodic detailed logging
+    if not hasattr(should_generate_map, '_call_count'):
+        should_generate_map._call_count = 0
+    should_generate_map._call_count += 1
+    verbose_logging = (should_generate_map._call_count % 20 == 0)  # Every 20th call (~100 seconds)
+    
+    best_flight = find_best_flight(enriched_flights, config, verbose=verbose_logging)
     if not best_flight:
-        # Log why no flight was selected (only occasionally to avoid spam)
+        # Always log summary when we have flights but no candidates
         if len(enriched_flights) > 0:
             routes_count = sum(1 for f in enriched_flights if f.get('origin') and f.get('destination'))
-            if routes_count == 0:
-                print("ℹ️  Map generation: No flights with routes found")
-            elif routes_count > 0:
-                # Only log occasionally to avoid spam
-                pass
+            positions_count = sum(1 for f in enriched_flights if f.get('lat') and f.get('lon'))
+            altitudes = [f.get('altitude') for f in enriched_flights if f.get('altitude') is not None]
+            distances = [f.get('distance') for f in enriched_flights if f.get('distance') is not None]
+            
+            # Log periodic detailed info
+            if verbose_logging or should_generate_map._call_count <= 5:  # First 5 calls or every 20th
+                print(f"📊 Map generation status: {len(enriched_flights)} flights, {routes_count} with routes, {positions_count} with position")
+                if altitudes:
+                    print(f"   Altitudes: min={min(altitudes)}ft, max={max(altitudes)}ft (required: >={map_config.get('min_altitude', 10000)}ft)")
+                if distances:
+                    print(f"   Distances: min={min(distances):.1f}km, max={max(distances):.1f}km (required: <={map_config.get('max_distance_km', 500)}km)")
+                if routes_count == 0:
+                    print(f"   ⚠️  No flights have routes yet (route lookup may still be in progress)")
         return (False, None)
     
     best_callsign = best_flight.get('callsign', best_flight.get('icao', 'Unknown'))
@@ -240,7 +354,9 @@ def should_generate_map(enriched_flights, config):
     if last_map_generation_time is not None:
         time_since_last = current_time - last_map_generation_time
         if time_since_last < min_interval:
-            # Too soon, don't generate (silently skip)
+            # Too soon, don't generate (log occasionally)
+            if verbose_logging:
+                print(f"⏸️  Map generation: Skipping {best_callsign} (too soon: {int(time_since_last)}s < {min_interval}s)")
             return (False, None)
     
     # Don't regenerate for the same flight (unless image is very old)
@@ -259,7 +375,9 @@ def should_generate_map(enriched_flights, config):
     if image_exists:
         image_age = current_time - os.path.getmtime(map_file)
         if image_age < min_interval:
-            # Image too recent, silently skip
+            # Image too recent, log occasionally
+            if verbose_logging:
+                print(f"⏸️  Map generation: Skipping {best_callsign} (image too recent: {int(image_age)}s < {min_interval}s)")
             return (False, None)
     
     # All checks passed - will generate
@@ -346,14 +464,14 @@ def generate_clear_skies_map(config):
     
     try:
         # Import the clear skies map generation function
-        from map_to_svg import generate_clear_skies_map
+        from map_to_png import generate_clear_skies_map
         
         print(f"🌤️  Generating clear skies map centered on {location_name}...")
         success = generate_clear_skies_map(
             target_lat, 
             target_lon, 
             location_name,
-            output_path='test_map.png',
+            output_path='inky_ready.png',
             width=800,
             height=480,
             zoom=11,  # Good zoom level for airports/cities
@@ -362,7 +480,20 @@ def generate_clear_skies_map(config):
         
         if success:
             last_map_generation_time = current_time
-            print(f"✅ Clear skies map generated: test_map.png (Location: {location_name})")
+            # Note: generate_clear_skies_map already prints success message, so we don't duplicate it here
+            
+            # Display the image on Inky display
+            map_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inky_ready.png')
+            if os.path.exists(map_file) and HAS_INKY_DISPLAY:
+                try:
+                    print(f"🖥️  Displaying clear skies map on Inky display...")
+                    display_success = display_image_on_inky(map_file, verbose=False)
+                    if display_success:
+                        print(f"✓ Clear skies map displayed on Inky display")
+                    else:
+                        print(f"⚠️  Warning: Failed to display on Inky (display may not be connected)")
+                except Exception as e:
+                    print(f"⚠️  Warning: Error displaying on Inky: {e}")
         else:
             print(f"⚠️  Warning: Clear skies map generation failed")
     except Exception as e:
@@ -373,20 +504,28 @@ def generate_clear_skies_map(config):
 
 def generate_map_image(flight_data):
     """
-    Generate map image for a flight using map_to_svg.py
+    Generate map image for a flight using map_to_png.py
     
     Args:
         flight_data: Dictionary with flight information
     """
-    global last_map_generation_time, last_map_flight_icao
+    global last_map_generation_time, last_map_flight_icao, map_generation_in_progress
+    
+    # Check if map generation is already in progress
+    with map_generation_lock:
+        if map_generation_in_progress:
+            callsign = flight_data.get('callsign', flight_data.get('icao', 'Unknown'))
+            print(f"⏸️  Map generation already in progress, skipping {callsign}")
+            return
+        map_generation_in_progress = True
     
     try:
-        # Build command-line arguments for map_to_svg.py
+        # Build command-line arguments for map_to_png.py
         args = [
-            'python3', 'map_to_svg.py',
+            'python3', 'map_to_png.py',
             '--lat', str(flight_data.get('lat', 0)),
             '--lon', str(flight_data.get('lon', 0)),
-            '--output', 'test_map.png',
+            '--output', 'inky_ready.png',
             '--overlay-card',
             '--inky',  # Use Inky-compatible colors
         ]
@@ -445,10 +584,20 @@ def generate_map_image(flight_data):
             # Update tracking variables
             last_map_generation_time = time.time()
             last_map_flight_icao = flight_data.get('icao')
-            origin = flight_data.get('origin', 'N/A')
-            destination = flight_data.get('destination', 'N/A')
-            print(f"✅ Map image generated: test_map.png (Flight: {callsign}, "
-                  f"Route: {origin} → {destination})")
+            # Note: map_to_png.py already prints success message, so we don't duplicate it here
+            
+            # Display the image on Inky display
+            map_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inky_ready.png')
+            if os.path.exists(map_file) and HAS_INKY_DISPLAY:
+                try:
+                    print(f"🖥️  Displaying map on Inky display...")
+                    display_success = display_image_on_inky(map_file, verbose=False)
+                    if display_success:
+                        print(f"✓ Map displayed on Inky display")
+                    else:
+                        print(f"⚠️  Warning: Failed to display on Inky (display may not be connected)")
+                except Exception as e:
+                    print(f"⚠️  Warning: Error displaying on Inky: {e}")
         else:
             error_msg = result.stderr[:200] if result.stderr else result.stdout[:200]
             print(f"⚠️  Warning: Map generation failed for {callsign}: {error_msg}")
@@ -458,6 +607,10 @@ def generate_map_image(flight_data):
     except Exception as e:
         callsign = flight_data.get('callsign', flight_data.get('icao', 'Unknown'))
         print(f"⚠️  Warning: Error generating map image for {callsign}: {e}")
+    finally:
+        # Always release the lock
+        with map_generation_lock:
+            map_generation_in_progress = False
 
 
 def process_aircraft_data(aircraft_data):
@@ -555,18 +708,45 @@ def process_aircraft_data(aircraft_data):
                     flight_memory[icao]['lookup_attempted'] = True
                     lat = ac.get('lat')
                     lon = ac.get('lon')
-                    route_info = get_flight_route(icao, callsign, lat, lon)
-                    if route_info:
-                        if route_info.get('error'):
-                            flight_memory[icao]['lookup_error'] = route_info.get('error')
+                    if lat and lon:
+                        route_info = get_flight_route(icao, callsign, lat, lon)
+                        if route_info:
+                            if route_info.get('error'):
+                                flight_memory[icao]['lookup_error'] = route_info.get('error')
+                                # Only log errors occasionally to avoid spam
+                                if not hasattr(process_aircraft_data, '_route_error_logged'):
+                                    process_aircraft_data._route_error_logged = set()
+                                if icao not in process_aircraft_data._route_error_logged:
+                                    print(f"⚠️  Route lookup error for {callsign}: {route_info.get('error')}")
+                                    process_aircraft_data._route_error_logged.add(icao)
+                            else:
+                                flight_memory[icao]['origin'] = route_info.get('origin')
+                                flight_memory[icao]['destination'] = route_info.get('destination')
+                                flight_memory[icao]['origin_country'] = route_info.get('origin_country')
+                                flight_memory[icao]['destination_country'] = route_info.get('destination_country')
+                                flight_memory[icao]['source'] = route_info.get('source', 'unknown')
+                                # Log successful route lookup (first time only)
+                                if not hasattr(process_aircraft_data, '_route_success_logged'):
+                                    process_aircraft_data._route_success_logged = set()
+                                if icao not in process_aircraft_data._route_success_logged:
+                                    origin = route_info.get('origin', '?')
+                                    dest = route_info.get('destination', '?')
+                                    print(f"✓ Route found for {callsign}: {origin} → {dest}")
+                                    process_aircraft_data._route_success_logged.add(icao)
                         else:
-                            flight_memory[icao]['origin'] = route_info.get('origin')
-                            flight_memory[icao]['destination'] = route_info.get('destination')
-                            flight_memory[icao]['origin_country'] = route_info.get('origin_country')
-                            flight_memory[icao]['destination_country'] = route_info.get('destination_country')
-                            flight_memory[icao]['source'] = route_info.get('source', 'unknown')
+                            # Route lookup returned None (no route found)
+                            flight_memory[icao]['lookup_error'] = 'No route found'
+                    else:
+                        # No position data yet, will retry later
+                        flight_memory[icao]['lookup_error'] = 'No position data'
                 except Exception as e:
                     flight_memory[icao]['lookup_error'] = str(e)
+                    # Log exceptions occasionally
+                    if not hasattr(process_aircraft_data, '_route_exception_logged'):
+                        process_aircraft_data._route_exception_logged = set()
+                    if icao not in process_aircraft_data._route_exception_logged:
+                        print(f"⚠️  Route lookup exception for {callsign}: {e}")
+                        process_aircraft_data._route_exception_logged.add(icao)
             
             # Lookup aircraft information (model, type, registration) from adsb.lol
             if icao != 'Unknown':
@@ -592,25 +772,60 @@ def process_aircraft_data(aircraft_data):
                     flight_memory[icao]['airline_logo'] = airline_info.get('logo_url')
                     flight_memory[icao]['airline_name'] = airline_info.get('name')
             
-            # Retry route lookup on 5th cycle if no route info yet (requires callsign)
-            if flight_memory[icao]['seen_cycles'] == 5:
-                if not flight_memory[icao].get('origin') and callsign and icao != 'Unknown':
-                    try:
-                        flight_memory[icao]['lookup_attempted'] = True
-                        lat = ac.get('lat')
-                        lon = ac.get('lon')
-                        route_info = get_flight_route(icao, callsign, lat, lon)
-                        if route_info:
-                            if route_info.get('error'):
-                                flight_memory[icao]['lookup_error'] = route_info.get('error')
-                            else:
-                                flight_memory[icao]['origin'] = route_info.get('origin')
-                                flight_memory[icao]['destination'] = route_info.get('destination')
-                                flight_memory[icao]['origin_country'] = route_info.get('origin_country')
-                                flight_memory[icao]['destination_country'] = route_info.get('destination_country')
-                                flight_memory[icao]['source'] = route_info.get('source', 'unknown')
-                    except Exception as e:
-                        flight_memory[icao]['lookup_error'] = str(e)
+            # Retry route lookup if:
+            # 1. No route info yet AND we have callsign AND position data
+            # 2. Previous lookup failed due to missing position AND we now have position
+            # 3. On 5th cycle as a retry mechanism
+            needs_route_lookup = (
+                not flight_memory[icao].get('origin') and 
+                callsign and 
+                icao != 'Unknown' and
+                lat and lon  # Must have position data
+            )
+            
+            # Check if previous lookup failed due to missing position
+            prev_error = flight_memory[icao].get('lookup_error')
+            had_no_position = (prev_error == 'No position data')
+            
+            if needs_route_lookup and (had_no_position or flight_memory[icao]['seen_cycles'] == 5 or not flight_memory[icao].get('lookup_attempted')):
+                try:
+                    flight_memory[icao]['lookup_attempted'] = True
+                    route_info = get_flight_route(icao, callsign, lat, lon)
+                    if route_info:
+                        if route_info.get('error'):
+                            flight_memory[icao]['lookup_error'] = route_info.get('error')
+                            # Log errors occasionally
+                            if not hasattr(process_aircraft_data, '_route_error_logged'):
+                                process_aircraft_data._route_error_logged = set()
+                            if icao not in process_aircraft_data._route_error_logged:
+                                print(f"⚠️  Route lookup error for {callsign}: {route_info.get('error')}")
+                                process_aircraft_data._route_error_logged.add(icao)
+                        else:
+                            flight_memory[icao]['origin'] = route_info.get('origin')
+                            flight_memory[icao]['destination'] = route_info.get('destination')
+                            flight_memory[icao]['origin_country'] = route_info.get('origin_country')
+                            flight_memory[icao]['destination_country'] = route_info.get('destination_country')
+                            flight_memory[icao]['source'] = route_info.get('source', 'unknown')
+                            flight_memory[icao]['lookup_error'] = None  # Clear error
+                            # Log successful route lookup
+                            if not hasattr(process_aircraft_data, '_route_success_logged'):
+                                process_aircraft_data._route_success_logged = set()
+                            if icao not in process_aircraft_data._route_success_logged:
+                                origin = route_info.get('origin', '?')
+                                dest = route_info.get('destination', '?')
+                                print(f"✓ Route found for {callsign}: {origin} → {dest}")
+                                process_aircraft_data._route_success_logged.add(icao)
+                    else:
+                        # Route lookup returned None
+                        flight_memory[icao]['lookup_error'] = 'No route found'
+                except Exception as e:
+                    flight_memory[icao]['lookup_error'] = str(e)
+                    # Log exceptions occasionally
+                    if not hasattr(process_aircraft_data, '_route_exception_logged'):
+                        process_aircraft_data._route_exception_logged = set()
+                    if icao not in process_aircraft_data._route_exception_logged:
+                        print(f"⚠️  Route lookup exception for {callsign}: {e}")
+                        process_aircraft_data._route_exception_logged.add(icao)
         
         # Add memory data to enriched flight
         if icao in flight_memory:
@@ -753,6 +968,10 @@ def process_aircraft_data(aircraft_data):
     stats['receiver_lat'] = config.get('receiver_lat')
     stats['receiver_lon'] = config.get('receiver_lon')
     stats['hide_receiver'] = config.get('hide_receiver', False)
+    clear_skies_config = config.get('clear_skies', {})
+    stats['nearest_airport'] = clear_skies_config.get('nearest_airport')
+    stats['nearest_airport_lat'] = clear_skies_config.get('airport_lat')
+    stats['nearest_airport_lon'] = clear_skies_config.get('airport_lon')
     
     # Check if we should generate a map image
     should_gen, best_flight = should_generate_map(enriched_flights, config)
@@ -772,59 +991,48 @@ def process_aircraft_data(aircraft_data):
         'flights': enriched_flights,
         'flight_count': len(enriched_flights)
     }
-
-# WebSocket handler
-async def handle_websocket(websocket):
-    """Handle WebSocket client connection"""
-    global websocket_clients
-    
-    websocket_clients.add(websocket)
-    print(f"WebSocket client connected. Total clients: {len(websocket_clients)}")
-    
-    # Send latest data immediately if available
-    if latest_flight_data:
-        try:
-            await websocket.send(json.dumps(latest_flight_data))
-        except websockets.exceptions.ConnectionClosed:
-            pass
-    
-    try:
-        # Keep connection alive - clients can send pings
-        async for message in websocket:
-            if message == 'ping':
-                await websocket.send('pong')
-    except websockets.exceptions.ConnectionClosed:
-        pass
-    finally:
-        websocket_clients.discard(websocket)
-        print(f"WebSocket client disconnected. Total clients: {len(websocket_clients)}")
-
-async def broadcast_flight_data(data):
-    """Broadcast flight data to all WebSocket clients"""
-    global websocket_clients
-    
-    if not websocket_clients:
-        return
-    
-    message = json.dumps(data)
-    disconnected = set()
-    
-    for client in websocket_clients:
-        try:
-            await client.send(message)
-        except websockets.exceptions.ConnectionClosed:
-            disconnected.add(client)
-        except Exception as e:
-            print(f"Error broadcasting to client: {e}")
-            disconnected.add(client)
-    
-    # Clean up disconnected clients
-    websocket_clients -= disconnected
-
 # HTTP server
 class FlightHTTPHandler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=os.path.join(os.path.dirname(__file__), 'web'), **kwargs)
+
+    def do_GET(self):
+        if self.path == '/events':
+            self.handle_sse()
+        else:
+            super().do_GET()
+
+    def handle_sse(self):
+        global latest_flight_data
+
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Connection', 'keep-alive')
+        self.end_headers()
+
+        client_wrapper, client_count = register_sse_client(self.wfile)
+        self.close_connection = False
+        print(f"SSE client connected. Total clients: {client_count}")
+
+        try:
+            if latest_flight_data:
+                try:
+                    client_wrapper.send_message(latest_flight_data)
+                except Exception:
+                    return
+
+            while True:
+                time.sleep(SSE_KEEPALIVE_INTERVAL)
+                try:
+                    client_wrapper.send_comment('keep-alive')
+                except Exception:
+                    break
+        finally:
+            remaining = unregister_sse_client(client_wrapper)
+            print(f"SSE client disconnected. Total clients: {remaining}")
     
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -834,18 +1042,18 @@ class FlightHTTPHandler(SimpleHTTPRequestHandler):
         # Suppress HTTP logs for cleaner output
         pass
 
+
+class ThreadingFlightHTTPServer(ThreadingMixIn, TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 def run_http_server(host, port):
     """Run HTTP server in a separate thread"""
-    with TCPServer((host, port), FlightHTTPHandler) as httpd:
+    with ThreadingFlightHTTPServer((host, port), FlightHTTPHandler) as httpd:
         print(f"HTTP server running on http://{host}:{port}")
         print(f"Open http://{host}:{port}/index-maps.html in your browser")
         httpd.serve_forever()
-
-async def run_websocket_server(host, port):
-    """Run WebSocket server"""
-    async with websockets.serve(handle_websocket, host, port):
-        print(f"WebSocket server running on ws://{host}:{port}")
-        await asyncio.Future()  # Run forever
 
 async def flight_data_loop(config):
     """Main loop for collecting and broadcasting flight data"""
@@ -866,10 +1074,7 @@ async def flight_data_loop(config):
             # Process and enrich flight data
             flight_update = process_aircraft_data(data)
             latest_flight_data = flight_update
-            
-            # Broadcast to WebSocket clients
-            if websocket_clients:
-                await broadcast_flight_data(flight_update)
+            broadcast_sse(flight_update)
         else:
             consecutive_errors += 1
             if consecutive_errors == max_errors:
@@ -886,12 +1091,17 @@ async def main():
     
     http_host = config.get('http_host', '0.0.0.0')
     http_port = config.get('http_port', 8080)
-    ws_host = config.get('websocket_host', '0.0.0.0')
-    ws_port = config.get('websocket_port', 8765)
     
     print("=" * 70)
     print("Flight Tracker Server (with Maps)")
     print("=" * 70)
+    print()
+    
+    # Check and report Inky display status
+    if HAS_INKY_DISPLAY:
+        print("✓ Inky display: Available (maps will be displayed automatically)")
+    else:
+        print("⚠️  Inky display: Not available (maps will be generated but not displayed)")
     print()
     
     # Start HTTP server in background thread
@@ -905,11 +1115,10 @@ async def main():
     # Give HTTP server time to start
     await asyncio.sleep(0.5)
     
-    # Run WebSocket server and flight data loop concurrently
-    await asyncio.gather(
-        run_websocket_server(ws_host, ws_port),
-        flight_data_loop(config)
-    )
+    print(f"SSE endpoint available at http://{http_host}:{http_port}/events")
+
+    # Run flight data loop
+    await flight_data_loop(config)
 
 if __name__ == '__main__':
     try:
