@@ -27,3 +27,4 @@ This is the Raspberry Pi Pico version of the NeoPixel rainbow demo.
 4. Run the script:
    - In **Thonny**: Click the **Run** button (or press F5)
    - The script will automatically run on boot if saved as `main.py` on the Pico
+
