@@ -1,0 +1,15 @@
+# WiFi configuration (contains sensitive credentials)
+pico/wifi_config.py
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
