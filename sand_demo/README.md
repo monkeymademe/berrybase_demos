@@ -56,3 +56,4 @@ You can modify the following parameters in `sand_simulation.py`:
 - Particles start in the upper third of the display when initialized
 
 
+
