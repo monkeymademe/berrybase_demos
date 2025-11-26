@@ -1,0 +1,3 @@
+requests>=2.31.0
+presto>=1.0.0
+picovector>=1.0.0

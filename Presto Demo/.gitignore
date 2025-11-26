@@ -1,0 +1,22 @@
+# WiFi configuration files (contain sensitive credentials)
+wifi_config.json
+wifi_config.py
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
