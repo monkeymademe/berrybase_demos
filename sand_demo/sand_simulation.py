@@ -450,15 +450,21 @@ class SandSimulation:
         
         self.sense.set_pixels(pixels)
     
+    def clear_screen(self):
+        """Clear terminal screen and move cursor to top"""
+        print("\033[2J\033[H", end="")  # Clear screen and move to top
+    
     def run(self):
         """Main simulation loop"""
         print("Sand Simulation Started!")
         print("Tilt the Raspberry Pi to move the sand around")
         print("Shake it to make the LEDs dance! 🎉")
         print("Press Ctrl+C to exit")
+        print("\n" * 2)  # Some space before debug output
         
         frame_count = 0
         debug_interval = 20  # Print debug info every 20 frames
+        first_debug = True  # Track if this is the first debug output
         
         try:
             while True:
@@ -470,6 +476,14 @@ class SandSimulation:
                 self.shake_active = acceleration.get('shake', 0.0) > 0
                 
                 if debug:
+                    # Clear screen and redraw (except first time to show startup message)
+                    if not first_debug:
+                        self.clear_screen()
+                    else:
+                        first_debug = False
+                    
+                    print("Sand Simulation - Debug Output")
+                    print("=" * 50)
                     print(f"Applied forces: x={acceleration['x']:.4f}, y={acceleration['y']:.4f}, z={acceleration['z']:.4f}")
                     if self.shake_active:
                         print(f"🎉 SHAKING! Intensity: {acceleration.get('shake', 0.0):.2f}")
