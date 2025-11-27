@@ -38,7 +38,9 @@ A collection of animated patterns for a NeoPixel LED ring controlled by an ESP32
 1. **Data Line (DIN):**
    - Connect NeoPixel ring's **DIN** (Data In) to **ESP32 GPIO 2**
    - You can use other GPIO pins (4, 5, 12, 13, 14, 15, 18, 19, 21, 22, 23)
-   - If using a different pin, update `strip_pin = Pin(2, Pin.OUT)` in `main.py`
+   - If using a different pin:
+     - **Arduino IDE:** Update `#define STRIP_PIN 2` in `esp32_pixel_demo.ino`
+     - **MicroPython:** Update `strip_pin = Pin(2, Pin.OUT)` in `main.py`
 
 2. **Power:**
    - Connect NeoPixel ring's **VCC** (5V) to ESP32's **5V** pin
@@ -65,6 +67,81 @@ GND     ───────────────>  GND
 - ESP32 GPIO 2 → Ring DIN
 
 ## Software Installation
+
+This project supports two development environments:
+
+- **Arduino IDE** (Recommended for better performance) - See below
+- **MicroPython** - See [MicroPython Installation](#micropython-installation) section
+
+### Arduino IDE Installation (Recommended)
+
+Arduino IDE provides better performance and is easier to use if you're already familiar with Arduino.
+
+#### Step 1: Install Arduino IDE and ESP32 Support
+
+1. **Download and install Arduino IDE:**
+   - Visit: https://www.arduino.cc/en/software
+   - Download and install Arduino IDE (version 1.8.x or 2.x)
+
+2. **Add ESP32 Board Support:**
+   - Open Arduino IDE
+   - Go to **File → Preferences**
+   - In "Additional Board Manager URLs", add:
+     ```
+     https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+     ```
+   - Click **OK**
+
+3. **Install ESP32 Board:**
+   - Go to **Tools → Board → Boards Manager**
+   - Search for "ESP32"
+   - Install "esp32" by Espressif Systems
+   - Wait for installation to complete
+
+4. **Select Your Board:**
+   - Go to **Tools → Board → ESP32 Arduino**
+   - Select your ESP32 board (e.g., "ESP32 Dev Module")
+
+#### Step 2: Install Adafruit NeoPixel Library
+
+1. **Install Library:**
+   - Go to **Sketch → Include Library → Manage Libraries**
+   - Search for "Adafruit NeoPixel"
+   - Install "Adafruit NeoPixel" by Adafruit
+
+#### Step 3: Upload Code
+
+1. **Open the sketch:**
+   - Open `esp32_pixel_demo.ino` in Arduino IDE
+
+2. **Configure settings (optional):**
+   - Edit the constants at the top if needed:
+     ```cpp
+     #define NUM_PIXELS 24
+     #define BRIGHTNESS 0.3
+     #define STRIP_PIN 2
+     #define ANIMATION_DURATION 10000
+     ```
+
+3. **Select Port:**
+   - Go to **Tools → Port**
+   - Select your ESP32's COM port (on Mac: `/dev/cu.usbserial-*` or `/dev/cu.SLAB_USBtoUART`)
+
+4. **Upload:**
+   - Click the **Upload** button (→) or press `Ctrl+U` (Windows/Linux) / `Cmd+U` (Mac)
+   - Wait for compilation and upload to complete
+   - The code will run automatically!
+
+**Advantages of Arduino IDE:**
+- ✅ Better performance (faster animations)
+- ✅ More memory efficient
+- ✅ Easier to use if familiar with Arduino
+- ✅ Better real-time performance
+- ✅ No need to install MicroPython
+
+---
+
+### MicroPython Installation
 
 ### Step 1: Install MicroPython on ESP32
 
@@ -154,7 +231,25 @@ mpremote cp main.py :main.py
 
 ## Configuration
 
-Edit the following variables in `main.py` to customize:
+### Arduino IDE Configuration
+
+Edit the following constants at the top of `esp32_pixel_demo.ino`:
+
+```cpp
+#define NUM_PIXELS 24              // Number of LEDs in your ring
+#define BRIGHTNESS 0.3             // Brightness (0.0 to 1.0)
+#define STRIP_PIN 2                // GPIO pin for data line
+#define ANIMATION_DURATION 10000   // Duration in milliseconds
+
+// Primary color RGB values
+#define PRIMARY_R 62               // Red component (0-255)
+#define PRIMARY_G 145              // Green component (0-255)
+#define PRIMARY_B 190              // Blue component (0-255)
+```
+
+### MicroPython Configuration
+
+Edit the following variables in `main.py`:
 
 ```python
 num_pixels = 24              # Number of LEDs in your ring
@@ -166,12 +261,21 @@ strip_pin = Pin(2, Pin.OUT)  # GPIO pin for data line
 
 ### Changing the Pin
 
-If you need to use a different GPIO pin, change:
+If you need to use a different GPIO pin:
+
+**Arduino IDE:**
+```cpp
+#define STRIP_PIN 2  // Change 2 to your desired pin
+```
+
+**MicroPython:**
 ```python
 strip_pin = Pin(2, Pin.OUT)  # Change 2 to your desired pin
 ```
 
 **Common ESP32 GPIO pins:** 2, 4, 5, 12, 13, 14, 15, 18, 19, 21, 22, 23
+
+**Note:** Avoid pins 0, 1, 3, 6, 7, 8, 9, 10, 11 (used for flash/PSRAM)
 
 **Note:** Avoid pins 0, 1, 3, 6, 7, 8, 9, 10, 11 (used for flash/PSRAM)
 
@@ -208,11 +312,59 @@ Each animation function:
 - ✅ Verify RGB color tuple format: `(R, G, B)` where values are 0-255
 - ✅ Check brightness setting (too low = dim, too high = washed out)
 
-### Code Won't Upload
-- ✅ Check COM port selection
-- ✅ Try holding BOOT button while connecting
-- ✅ Verify MicroPython is installed correctly
-- ✅ Check USB cable (some are power-only)
+### Code Won't Upload (Arduino IDE)
+
+**Error: `termios.error: (22, 'Invalid argument')` or Serial Port Issues**
+
+This is a common issue on macOS. Try these solutions in order:
+
+1. **Manual Upload Mode (Most Reliable):**
+   - Hold the **BOOT** button on your ESP32
+   - While holding BOOT, press and release the **RESET** button
+   - Release the BOOT button
+   - Click **Upload** in Arduino IDE
+   - Wait for "Connecting..." message, then release buttons if needed
+
+2. **Check Port Permissions (macOS):**
+   ```bash
+   # Check if you can access the port
+   ls -l /dev/cu.usbserial-*
+   
+   # If permission denied, you may need to add your user to dialout group
+   # Or use sudo (not recommended, but works)
+   ```
+
+3. **Close Other Programs:**
+   - Close any serial monitors, terminal programs, or other IDEs using the port
+   - Close Thonny, PlatformIO, or any other ESP32 tools
+
+4. **Try Different Port:**
+   - Unplug and replug USB cable
+   - Check **Tools → Port** for updated port name
+   - Try `/dev/cu.usbserial-*` instead of `/dev/tty.usbserial-*` (use `cu` not `tty`)
+
+5. **Lower Upload Speed:**
+   - Go to **Tools → Upload Speed**
+   - Try **115200** or **921600** (lower speeds are more reliable)
+
+6. **Check USB Cable:**
+   - Use a data-capable USB cable (not power-only)
+   - Try a different USB port (preferably USB 2.0, not USB 3.0)
+
+7. **Driver Issues:**
+   - Some ESP32 boards need CH340 or CP2102 drivers
+   - Check if your board appears in System Information → USB
+   - Download drivers from manufacturer if needed
+
+8. **Arduino IDE Settings:**
+   - Go to **Tools → Board** and ensure correct ESP32 board is selected
+   - Try **Tools → Erase All Flash Before Sketch Upload** → **Enabled**
+
+**General Upload Tips:**
+- ✅ Always use `/dev/cu.*` ports on macOS (not `/dev/tty.*`)
+- ✅ Close Serial Monitor before uploading
+- ✅ Some boards need BOOT button held during entire upload
+- ✅ Try uploading immediately after connecting (before auto-reset)
 
 ### Animations Too Fast/Slow
 - ✅ Adjust `animation_duration` for longer/shorter cycles

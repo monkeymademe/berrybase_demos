@@ -264,3 +264,4 @@ if __name__ == "__main__":
         selected_animation = animations[random.randint(0, len(animations) - 1)]
         selected_animation(animation_duration)
 
+
