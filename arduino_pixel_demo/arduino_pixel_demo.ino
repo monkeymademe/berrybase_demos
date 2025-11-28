@@ -3,10 +3,11 @@
 #define NUM_PIXELS 24
 #define STRIP_PIN 6  // Digital pin 6 (you can change this to any available digital pin)
 
+
 const float brightness = 0.3;  // Adjust brightness (0.0 to 1.0, where 1.0 is full brightness)
-const uint8_t primary_color_r = 62;   // RGB color #3e91be
-const uint8_t primary_color_g = 145;
-const uint8_t primary_color_b = 190;
+const uint8_t primary_color_r = 205;   // RGB color #cd3c65 
+const uint8_t primary_color_g = 60;
+const uint8_t primary_color_b = 101;
 const unsigned long animation_duration = 10000;  // Duration in milliseconds (10 seconds)
 
 Adafruit_NeoPixel strip(NUM_PIXELS, STRIP_PIN, NEO_GRB + NEO_KHZ800);
