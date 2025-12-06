@@ -100,7 +100,11 @@ Arduino IDE provides better performance and is easier to use if you're already f
 
 4. **Select Your Board:**
    - Go to **Tools → Board → ESP32 Arduino**
-   - Select your ESP32 board (e.g., "ESP32 Dev Module")
+   - Select your ESP32 board:
+     - **LOLIN32**: Select "LOLIN32" or "WEMOS LOLIN32"
+     - **ESP32 DevKit**: Select "ESP32 Dev Module"
+     - **Other ESP32 boards**: Select the appropriate board from the list
+   - **Note:** The code works with all ESP32 boards - just select the correct board type
 
 #### Step 2: Install Adafruit NeoPixel Library
 
