@@ -187,8 +187,8 @@ echo ""
 
 # Disable screen saver for user
 echo -e "${GREEN}Step 6: Disabling screensaver...${NC}"
-mkdir -p /home/$CURRENT_USER/.config/systemd/user
-cat > /home/$CURRENT_USER/.config/systemd/user/xscreensaver-disable.service <<EOF
+sudo -u $CURRENT_USER mkdir -p /home/$CURRENT_USER/.config/systemd/user
+sudo -u $CURRENT_USER tee /home/$CURRENT_USER/.config/systemd/user/xscreensaver-disable.service > /dev/null <<EOF
 [Unit]
 Description=Disable XScreenSaver
 After=graphical-session.target
