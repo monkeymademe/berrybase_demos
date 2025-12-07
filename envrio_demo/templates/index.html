@@ -6,6 +6,36 @@
     <title>Enviro Indoor Sensor Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
+        :root {
+            --bg-gradient-start: #3e91be;
+            --bg-gradient-end: #cd3c65;
+            --bg-color: #f8f8f8;
+            --card-bg: white;
+            --text-primary: #333;
+            --text-secondary: #666;
+            --text-muted: #999;
+            --text-white: white;
+            --border-color: #f0f0f0;
+            --stats-panel-bg: #f8f8f8;
+            --stat-box-bg: #f8f8f8;
+            --sleep-overlay-bg: rgba(0, 0, 0, 0.1);
+        }
+
+        [data-theme="dark"] {
+            --bg-gradient-start: #6b6a6a;
+            --bg-gradient-end: #cd3c65;
+            --bg-color: #0f1419;
+            --card-bg: #1a1f2e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --text-muted: #808080;
+            --text-white: #e0e0e0;
+            --border-color: #2a2f3e;
+            --stats-panel-bg: #1a1f2e;
+            --stat-box-bg: #0f1419;
+            --sleep-overlay-bg: rgba(255, 255, 255, 0.1);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -14,10 +44,15 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #3e91be 0%, #cd3c65 100%);
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
             min-height: 100vh;
             padding: 20px;
-            color: #333;
+            color: var(--text-primary);
+            transition: background 0.3s ease;
+        }
+
+        html[data-theme="dark"] body {
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 90%, var(--bg-gradient-end) 100%);
         }
 
         .container {
@@ -27,7 +62,7 @@
 
         h1 {
             text-align: center;
-            color: white;
+            color: var(--text-white);
             margin-bottom: 30px;
             font-size: 2.5em;
         }
@@ -40,15 +75,16 @@
         }
 
         .sensor-card {
-            background: white;
+            background: var(--card-bg);
             border-radius: 20px;
             padding: 18px;
             min-width: 0; /* Allows flex shrinking */
+            transition: background 0.3s ease;
         }
 
         .sensor-title {
             font-size: 0.9em;
-            color: #666;
+            color: var(--text-secondary);
             margin-bottom: 10px;
             font-weight: 600;
             text-transform: uppercase;
@@ -65,7 +101,7 @@
 
         .sensor-unit {
             font-size: 0.6em;
-            color: #999;
+            color: var(--text-muted);
             font-weight: normal;
         }
 
@@ -78,7 +114,7 @@
         .meter-bar {
             width: 100%;
             height: 30px;
-            background: #f0f0f0;
+            background: var(--border-color);
             border-radius: 15px;
             overflow: hidden;
             position: relative;
@@ -123,15 +159,16 @@
         }
 
         .historical-section {
-            background: white;
+            background: var(--card-bg);
             border-radius: 20px;
             padding: 30px;
             margin-bottom: 20px;
+            transition: background 0.3s ease;
         }
 
         .section-title {
             font-size: 1.8em;
-            color: #666;
+            color: var(--text-secondary);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -150,7 +187,7 @@
         .time-btn {
             padding: 8px 16px;
             border: 2px solid #cd3c65;
-            background: white;
+            background: var(--card-bg);
             color: #cd3c65;
             border-radius: 20px;
             cursor: pointer;
@@ -173,7 +210,7 @@
         }
 
         .stats-panel {
-            background: #f8f8f8;
+            background: var(--stats-panel-bg);
             border-radius: 15px;
             padding: 20px;
             margin-top: 20px;
@@ -181,17 +218,19 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 15px;
+            transition: background 0.3s ease;
         }
 
         .stat-item {
-            background: white;
+            background: var(--card-bg);
             padding: 15px;
             border-radius: 10px;
+            transition: background 0.3s ease;
         }
 
         .stat-label {
             font-size: 0.8em;
-            color: #666;
+            color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 12px;
@@ -212,7 +251,8 @@
             align-items: center;
             padding: 8px;
             border-radius: 8px;
-            background: #f8f8f8;
+            background: var(--stat-box-bg);
+            transition: background 0.3s ease;
         }
 
         .stat-box.min {
@@ -229,7 +269,7 @@
 
         .stat-value-label {
             font-size: 0.65em;
-            color: #999;
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 6px;
@@ -312,7 +352,8 @@
             display: none;
             margin-top: 20px;
             padding-top: 20px;
-            border-top: 2px solid #f0f0f0;
+            border-top: 2px solid var(--border-color);
+            transition: border-color 0.3s ease;
         }
 
         .additional-charts.expanded {
@@ -332,40 +373,11 @@
 
         .chart-title {
             font-size: 1.2em;
-            color: #333;
+            color: var(--text-primary);
             margin-bottom: 10px;
             font-weight: 600;
         }
 
-        .sleep-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 1000;
-            opacity: 0.1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: opacity 0.5s ease;
-        }
-
-        .sleep-overlay.active {
-            opacity: 0.15;
-        }
-
-        .sleep-icon {
-            font-size: 15em;
-            color: #cd3c65;
-            animation: pulse 3s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); opacity: 0.1; }
-            50% { transform: scale(1.1); opacity: 0.2; }
-        }
 
         .status-indicator {
             display: inline-block;
@@ -389,12 +401,43 @@
             50% { opacity: 0.5; }
         }
 
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: transparent;
+            border: none;
+            padding: 0;
+            width: auto;
+            height: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+            z-index: 1000;
+        }
+
+        .theme-toggle:hover {
+            opacity: 0.7;
+        }
+
+        .theme-toggle svg {
+            width: 28px;
+            height: 28px;
+            fill: white;
+        }
+
     </style>
 </head>
 <body>
-    <div class="sleep-overlay" id="sleepOverlay">
-        <div class="sleep-icon">😴</div>
-    </div>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+        <!-- Sun icon for light mode (shows moon to switch to dark) -->
+        <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278M4.858 1.311A7.27 7.27 0 0 0 1.025 7.71c0 4.02 3.279 7.276 7.319 7.276a7.32 7.32 0 0 0 5.205-2.162q-.506.063-1.029.063c-4.61 0-8.343-3.714-8.343-8.29 0-1.167.242-2.278.681-3.286"/>
+            <path d="M10.794 3.148a.217.217 0 0 1 .412 0l.387 1.162c.173.518.579.924 1.097 1.097l1.162.387a.217.217 0 0 1 0 .412l-1.162.387a1.73 1.73 0 0 0-1.097 1.097l-.387 1.162a.217.217 0 0 1-.412 0l-.387-1.162A1.73 1.73 0 0 0 9.31 6.593l-1.162-.387a.217.217 0 0 1 0-.412l1.162-.387a1.73 1.73 0 0 0 1.097-1.097zM13.863.099a.145.145 0 0 1 .274 0l.258.774c.115.346.386.617.732.732l.774.258a.145.145 0 0 1 0 .274l-.774.258a1.16 1.16 0 0 0-.732.732l-.258.774a.145.145 0 0 1-.274 0l-.258-.774a1.16 1.16 0 0 0-.732-.732l-.774-.258a.145.145 0 0 1 0-.274l.774-.258c.346-.115.617-.386.732-.732z"/>
+        </svg>
+    </button>
 
     <div class="container">
         <h1>
@@ -512,16 +555,16 @@
                     <span class="sensor-unit">K</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; margin-top: 15px;">
-                    <div id="colorPatch" style="width: 50px; height: 50px; border-radius: 8px; border: 2px solid #ddd; background: #fff; flex-shrink: 0;"></div>
+                    <div id="colorPatch" style="width: 50px; height: 50px; border-radius: 8px; border: 2px solid var(--border-color); background: var(--card-bg); flex-shrink: 0;"></div>
                     <div style="flex: 1; min-width: 0;">
-                        <div style="font-size: 0.75em; color: #666; margin-bottom: 3px;">Light Color</div>
-                        <div id="colorDescription" style="font-size: 0.8em; color: #333; font-weight: 500; word-wrap: break-word;">--</div>
+                        <div style="font-size: 0.75em; color: var(--text-secondary); margin-bottom: 3px;">Light Color</div>
+                        <div id="colorDescription" style="font-size: 0.8em; color: var(--text-primary); font-weight: 500; word-wrap: break-word;">--</div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div style="text-align: center; color: white; margin: 30px 0; font-size: 0.9em; font-weight: normal;">
+        <div style="text-align: center; color: var(--text-white); margin: 30px 0; font-size: 0.9em; font-weight: normal;">
             <span style="opacity: 0.9;">Data received: </span>
             <span id="dataReceivedTime">--</span>
         </div>
@@ -781,10 +824,13 @@
                     mode: 'index',
                     intersect: false,
                 },
-                plugins: {
+                    plugins: {
                     legend: {
                         display: true,
                         position: 'top',
+                        labels: {
+                            color: '#666'
+                        }
                     },
                     tooltip: {
                         enabled: true,
@@ -826,8 +872,15 @@
                         display: true,
                         title: {
                             display: true,
-                            text: 'Time'
+                            text: 'Time',
+                            color: '#666'
                         },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#666'
+                        }
                     },
                     y: {
                         type: 'linear',
@@ -835,7 +888,14 @@
                         position: 'left',
                         title: {
                             display: true,
-                            text: 'Temperature (°C)'
+                            text: 'Temperature (°C)',
+                            color: '#666'
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        ticks: {
+                            color: '#666'
                         }
                     },
                     y1: {
@@ -1223,16 +1283,13 @@
                     document.getElementById('dataReceivedTime').textContent = 'No data available';
                 }
 
-                // Update sleep overlay
-                const sleepOverlay = document.getElementById('sleepOverlay');
+                // Update status indicator
                 const statusIndicator = document.getElementById('statusIndicator');
                 
                 if (result.sleeping) {
-                    sleepOverlay.classList.add('active');
                     statusIndicator.classList.remove('active');
                     statusIndicator.classList.add('sleeping');
                 } else {
-                    sleepOverlay.classList.remove('active');
                     statusIndicator.classList.remove('sleeping');
                     statusIndicator.classList.add('active');
                 }
@@ -1529,9 +1586,98 @@
             }
         }
 
+        // Dark mode toggle
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            
+            // Update toggle icon - show icon for the NEW theme
+            updateThemeIcon(newTheme);
+            
+            // Update chart colors
+            updateChartColors(newTheme);
+        }
+
+        // Update theme icon based on current theme
+        function updateThemeIcon(theme) {
+            const svg = document.getElementById('themeIcon');
+            if (!svg) return;
+            
+            if (theme === 'dark') {
+                // Show sun icon when dark mode is ON (clicking will switch to light)
+                svg.innerHTML = '<path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/>';
+            } else {
+                // Show moon-stars icon when light mode is ON (clicking will switch to dark)
+                svg.innerHTML = '<path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278M4.858 1.311A7.27 7.27 0 0 0 1.025 7.71c0 4.02 3.279 7.276 7.319 7.276a7.32 7.32 0 0 0 5.205-2.162q-.506.063-1.029.063c-4.61 0-8.343-3.714-8.343-8.29 0-1.167.242-2.278.681-3.286"/><path d="M10.794 3.148a.217.217 0 0 1 .412 0l.387 1.162c.173.518.579.924 1.097 1.097l1.162.387a.217.217 0 0 1 0 .412l-1.162.387a1.73 1.73 0 0 0-1.097 1.097l-.387 1.162a.217.217 0 0 1-.412 0l-.387-1.162A1.73 1.73 0 0 0 9.31 6.593l-1.162-.387a.217.217 0 0 1 0-.412l1.162-.387a1.73 1.73 0 0 0 1.097-1.097zM13.863.099a.145.145 0 0 1 .274 0l.258.774c.115.346.386.617.732.732l.774.258a.145.145 0 0 1 0 .274l-.774.258a1.16 1.16 0 0 0-.732.732l-.258.774a.145.145 0 0 1-.274 0l-.258-.774a1.16 1.16 0 0 0-.732-.732l-.774-.258a.145.145 0 0 1 0-.274l.774-.258c.346-.115.617-.386.732-.732z"/>';
+            }
+        }
+
+        // Update chart colors based on theme
+        function updateChartColors(theme) {
+            const isDark = theme === 'dark';
+            const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+            const textColor = isDark ? '#b0b0b0' : '#666';
+            
+            // Update main chart
+            if (historicalChart) {
+                historicalChart.options.scales.x.grid.color = gridColor;
+                historicalChart.options.scales.x.ticks.color = textColor;
+                historicalChart.options.scales.x.title.color = textColor;
+                historicalChart.options.scales.y.grid.color = gridColor;
+                historicalChart.options.scales.y.ticks.color = textColor;
+                historicalChart.options.scales.y.title.color = textColor;
+                historicalChart.options.scales.y1.ticks.color = textColor;
+                historicalChart.options.scales.y1.title.color = textColor;
+                historicalChart.options.scales.y2.ticks.color = textColor;
+                historicalChart.options.scales.y2.title.color = textColor;
+                historicalChart.options.scales.y3.ticks.color = textColor;
+                historicalChart.options.scales.y3.title.color = textColor;
+                historicalChart.options.scales.y4.ticks.color = textColor;
+                historicalChart.options.scales.y4.title.color = textColor;
+                historicalChart.options.scales.y5.ticks.color = textColor;
+                historicalChart.options.scales.y5.title.color = textColor;
+                historicalChart.options.scales.y6.ticks.color = textColor;
+                historicalChart.options.scales.y6.title.color = textColor;
+                historicalChart.options.plugins.legend.labels.color = textColor;
+                historicalChart.update('none');
+            }
+            
+            // Update additional charts
+            const charts = [tempChart, humidityChart, pressureChart, luminanceChart, gasChart, aqiChart, colorTempChart];
+            charts.forEach(chart => {
+                if (chart) {
+                    chart.options.scales.x.grid.color = gridColor;
+                    chart.options.scales.x.ticks.color = textColor;
+                    chart.options.scales.x.title.color = textColor;
+                    chart.options.scales.y.grid.color = gridColor;
+                    chart.options.scales.y.ticks.color = textColor;
+                    chart.options.scales.y.title.color = textColor;
+                    chart.options.plugins.legend.labels.color = textColor;
+                    chart.update('none');
+                }
+            });
+        }
+
+        // Initialize theme from localStorage
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            
+            // Update toggle icon based on current theme
+            updateThemeIcon(savedTheme);
+        }
+
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', () => {
+            initTheme();
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
             initChart();
+            // Update chart colors after initialization
+            setTimeout(() => updateChartColors(currentTheme), 100);
             loadCurrentData();
             loadHistoricalData(24);
             loadStats(24); // Load initial stats
