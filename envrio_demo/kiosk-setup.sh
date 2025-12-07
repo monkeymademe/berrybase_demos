@@ -139,8 +139,8 @@ if [ "$autologin_response" = "y" ]; then
     # For LightDM (alternative display manager)
     if [ -f /etc/lightdm/lightdm.conf ]; then
         echo "Configuring LightDM autologin..."
-        sudo sed -i "s/#autologin-user=/autologin-user=$CURRENT_USER/" /etc/lightdm/lightdm.conf
-        sudo sed -i "s/#autologin-user-timeout=0/autologin-user-timeout=0/" /etc/lightdm/lightdm.conf
+        sudo sed -i "s/#autologin-user=/autologin-user=$CURRENT_USER/" /etc/lightdm/lightdm.conf 2>/dev/null || true
+        sudo sed -i "s/#autologin-user-timeout=0/autologin-user-timeout=0/" /etc/lightdm/lightdm.conf 2>/dev/null || true
     fi
     
     echo -e "${GREEN}Autologin configured.${NC}"
