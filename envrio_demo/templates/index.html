@@ -53,6 +53,7 @@
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         .sensor-value {
@@ -130,11 +131,15 @@
 
         .section-title {
             font-size: 1.8em;
-            color: #333;
+            color: #666;
             margin-bottom: 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         .time-selector {
@@ -150,7 +155,11 @@
             border-radius: 20px;
             cursor: pointer;
             transition: all 0.3s ease;
-            font-size: 0.9em;
+            font-size: 0.3em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         .time-btn:hover {
@@ -167,6 +176,64 @@
             position: relative;
             height: 300px;
             margin-top: 20px;
+        }
+
+        .expand-button {
+            text-align: center;
+            margin-top: 15px;
+            cursor: pointer;
+            user-select: none;
+            transition: transform 0.3s ease;
+        }
+
+        .expand-button:hover {
+            opacity: 0.8;
+        }
+
+        .expand-button.expanded {
+            transform: rotate(180deg);
+        }
+
+        .expand-icon {
+            width: 24px;
+            height: 24px;
+            color: #6b6a6a;
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+        
+        .expand-icon svg {
+            width: 100%;
+            height: 100%;
+            fill: currentColor;
+        }
+
+        .additional-charts {
+            display: none;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .additional-charts.expanded {
+            display: block;
+        }
+
+        .additional-chart-container {
+            position: relative;
+            height: 250px;
+            margin-bottom: 30px;
+        }
+
+        .additional-chart-container:last-child {
+            margin-bottom: 0;
+        }
+
+        .chart-title {
+            font-size: 1.2em;
+            color: #333;
+            margin-bottom: 10px;
+            font-weight: 600;
         }
 
         .sleep-overlay {
@@ -221,12 +288,6 @@
             50% { opacity: 0.5; }
         }
 
-        .last-update {
-            text-align: center;
-            color: white;
-            margin-top: 20px;
-            font-size: 0.9em;
-        }
     </style>
 </head>
 <body>
@@ -359,15 +420,16 @@
             </div>
         </div>
 
-        <div style="text-align: center; color: white; margin: 30px 0; font-size: 1.1em;">
+        <div style="text-align: center; color: white; margin: 30px 0; font-size: 0.9em; font-weight: normal;">
             <span style="opacity: 0.9;">Data received: </span>
-            <span id="dataReceivedTime" style="font-weight: 600;">--</span>
+            <span id="dataReceivedTime">--</span>
         </div>
 
         <div class="historical-section">
             <div class="section-title">
                 <span>Historical Data</span>
                 <div class="time-selector">
+                    <button class="time-btn" onclick="loadHistoricalData(1, this)">1h</button>
                     <button class="time-btn" onclick="loadHistoricalData(6, this)">6h</button>
                     <button class="time-btn active" onclick="loadHistoricalData(24, this)">24h</button>
                     <button class="time-btn" onclick="loadHistoricalData(48, this)">48h</button>
@@ -377,11 +439,45 @@
             <div class="chart-container">
                 <canvas id="historicalChart"></canvas>
             </div>
+            <div class="expand-button" id="expandButton" onclick="toggleAdditionalCharts()">
+                <div class="expand-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="additional-charts" id="additionalCharts">
+                <div class="additional-chart-container">
+                    <div class="chart-title">Temperature</div>
+                    <canvas id="tempChart"></canvas>
+                </div>
+                <div class="additional-chart-container">
+                    <div class="chart-title">Humidity</div>
+                    <canvas id="humidityChart"></canvas>
+                </div>
+                <div class="additional-chart-container">
+                    <div class="chart-title">Pressure</div>
+                    <canvas id="pressureChart"></canvas>
+                </div>
+                <div class="additional-chart-container">
+                    <div class="chart-title">Luminance</div>
+                    <canvas id="luminanceChart"></canvas>
+                </div>
+                <div class="additional-chart-container">
+                    <div class="chart-title">Gas Resistance</div>
+                    <canvas id="gasChart"></canvas>
+                </div>
+                <div class="additional-chart-container">
+                    <div class="chart-title">Air Quality Index</div>
+                    <canvas id="aqiChart"></canvas>
+                </div>
+                <div class="additional-chart-container">
+                    <div class="chart-title">Color Temperature</div>
+                    <canvas id="colorTempChart"></canvas>
+                </div>
+            </div>
         </div>
 
-        <div class="last-update" id="lastUpdate">
-            Last update: Never
-        </div>
     </div>
 
     <script>
@@ -397,6 +493,7 @@
                         borderColor: 'rgb(205, 60, 101)',
                         backgroundColor: 'rgba(205, 60, 101, 0.1)',
                         tension: 0.4,
+                        spanGaps: false,
                         yAxisID: 'y',
                     },
                     {
@@ -405,6 +502,7 @@
                         borderColor: 'rgb(62, 145, 190)',
                         backgroundColor: 'rgba(62, 145, 190, 0.1)',
                         tension: 0.4,
+                        spanGaps: false,
                         yAxisID: 'y1',
                     },
                     {
@@ -413,6 +511,7 @@
                         borderColor: 'rgb(255, 99, 132)',
                         backgroundColor: 'rgba(255, 99, 132, 0.1)',
                         tension: 0.4,
+                        spanGaps: false,
                         yAxisID: 'y2',
                     },
                     {
@@ -421,6 +520,7 @@
                         borderColor: 'rgb(75, 192, 192)',
                         backgroundColor: 'rgba(75, 192, 192, 0.1)',
                         tension: 0.4,
+                        spanGaps: false,
                         yAxisID: 'y3',
                     },
                     {
@@ -429,6 +529,7 @@
                         borderColor: 'rgb(255, 159, 64)',
                         backgroundColor: 'rgba(255, 159, 64, 0.1)',
                         tension: 0.4,
+                        spanGaps: false,
                         yAxisID: 'y4',
                     },
                     {
@@ -437,6 +538,7 @@
                         borderColor: 'rgb(153, 102, 255)',
                         backgroundColor: 'rgba(153, 102, 255, 0.1)',
                         tension: 0.4,
+                        spanGaps: false,
                         yAxisID: 'y5',
                     },
                     {
@@ -445,6 +547,7 @@
                         borderColor: 'rgb(255, 206, 86)',
                         backgroundColor: 'rgba(255, 206, 86, 0.1)',
                         tension: 0.4,
+                        spanGaps: false,
                         yAxisID: 'y6',
                     }
                 ]
@@ -471,7 +574,7 @@
                         title: {
                             display: true,
                             text: 'Time'
-                        }
+                        },
                     },
                     y: {
                         type: 'linear',
@@ -559,12 +662,169 @@
         };
 
         let historicalChart = null;
+        let tempChart = null;
+        let humidityChart = null;
+        let pressureChart = null;
+        let luminanceChart = null;
+        let gasChart = null;
+        let aqiChart = null;
+        let colorTempChart = null;
         let currentHours = 24;
+        let additionalChartsExpanded = false;
 
-        // Initialize chart
+        // Helper function to create a chart configuration
+        function createChartConfig(label, borderColor, backgroundColor, yAxisTitle, yMin, yMax) {
+            return {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        data: [],
+                        borderColor: borderColor,
+                        backgroundColor: backgroundColor,
+                        tension: 0.4,
+                        spanGaps: false,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            },
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 0,
+                                autoSkip: true,
+                                maxTicksLimit: 20,
+                                callback: function(value, index, ticks) {
+                                    const label = this.getLabelForValue(value);
+                                    // Always show tilde gap indicators
+                                    if (label === '~') {
+                                        return '~';
+                                    }
+                                    // For other labels, let Chart.js handle auto-skipping
+                                    return label;
+                                }
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: yAxisTitle
+                            },
+                            ...(yMin !== undefined && { min: yMin }),
+                            ...(yMax !== undefined && { max: yMax })
+                        }
+                    }
+                }
+            };
+        }
+
+        // Initialize charts
         function initChart() {
             const ctx = document.getElementById('historicalChart').getContext('2d');
             historicalChart = new Chart(ctx, chartConfig);
+            
+            // Initialize Temperature chart
+            const tempCtx = document.getElementById('tempChart').getContext('2d');
+            tempChart = new Chart(tempCtx, createChartConfig(
+                'Temperature (°C)',
+                'rgb(205, 60, 101)',
+                'rgba(205, 60, 101, 0.1)',
+                'Temperature (°C)'
+            ));
+            
+            // Initialize Humidity chart
+            const humidityCtx = document.getElementById('humidityChart').getContext('2d');
+            humidityChart = new Chart(humidityCtx, createChartConfig(
+                'Humidity (%)',
+                'rgb(62, 145, 190)',
+                'rgba(62, 145, 190, 0.1)',
+                'Humidity (%)',
+                0,
+                100
+            ));
+            
+            // Initialize Pressure chart
+            const pressureCtx = document.getElementById('pressureChart').getContext('2d');
+            pressureChart = new Chart(pressureCtx, createChartConfig(
+                'Pressure (hPa)',
+                'rgb(255, 99, 132)',
+                'rgba(255, 99, 132, 0.1)',
+                'Pressure (hPa)'
+            ));
+            
+            // Initialize Luminance chart
+            const luminanceCtx = document.getElementById('luminanceChart').getContext('2d');
+            luminanceChart = new Chart(luminanceCtx, createChartConfig(
+                'Luminance (lux)',
+                'rgb(75, 192, 192)',
+                'rgba(75, 192, 192, 0.1)',
+                'Luminance (lux)'
+            ));
+            
+            // Initialize Gas Resistance chart
+            const gasCtx = document.getElementById('gasChart').getContext('2d');
+            gasChart = new Chart(gasCtx, createChartConfig(
+                'Gas Resistance (Ω)',
+                'rgb(255, 159, 64)',
+                'rgba(255, 159, 64, 0.1)',
+                'Gas Resistance (Ω)'
+            ));
+            
+            // Initialize AQI chart
+            const aqiCtx = document.getElementById('aqiChart').getContext('2d');
+            aqiChart = new Chart(aqiCtx, createChartConfig(
+                'Air Quality Index (%)',
+                'rgb(153, 102, 255)',
+                'rgba(153, 102, 255, 0.1)',
+                'AQI (%)',
+                0,
+                100
+            ));
+            
+            // Initialize Color Temperature chart
+            const colorTempCtx = document.getElementById('colorTempChart').getContext('2d');
+            colorTempChart = new Chart(colorTempCtx, createChartConfig(
+                'Color Temperature (K)',
+                'rgb(255, 206, 86)',
+                'rgba(255, 206, 86, 0.1)',
+                'Temperature (K)'
+            ));
+        }
+
+        // Toggle additional charts visibility
+        function toggleAdditionalCharts() {
+            const additionalCharts = document.getElementById('additionalCharts');
+            const expandButton = document.getElementById('expandButton');
+            
+            additionalChartsExpanded = !additionalChartsExpanded;
+            
+            if (additionalChartsExpanded) {
+                additionalCharts.classList.add('expanded');
+                expandButton.classList.add('expanded');
+                // Load data for additional charts if not already loaded
+                if (tempChart && humidityChart && pressureChart && luminanceChart && gasChart && aqiChart && colorTempChart) {
+                    loadAdditionalChartsData();
+                }
+            } else {
+                additionalCharts.classList.remove('expanded');
+                expandButton.classList.remove('expanded');
+            }
         }
 
         // Convert Kelvin to RGB (color temperature algorithm)
@@ -705,15 +965,9 @@
                     
                     // Update "Data received" timestamp
                     document.getElementById('dataReceivedTime').textContent = formattedDate;
-                    
-                    // Update "Last update" at bottom
-                    document.getElementById('lastUpdate').textContent = 
-                        'Last update: ' + formattedDate;
                 } else {
                     // No data available
                     document.getElementById('dataReceivedTime').textContent = 'No data available';
-                    document.getElementById('lastUpdate').textContent = 
-                        'Last update: No data available';
                 }
 
                 // Update sleep overlay
@@ -751,26 +1005,172 @@
                 const result = await response.json();
 
                 if (result.success && result.data && result.data.length > 0) {
-                    const labels = result.data.map(d => {
-                        const date = new Date(d.timestamp * 1000);
-                        return date.toLocaleTimeString();
-                    });
+                    // Create labels and data arrays with null values for gaps (visual break, no tilde label)
+                    const gapThreshold = 29 * 60 * 1000; // 29 minutes in milliseconds
+                    
+                    // Build labels array once (with null for gaps to maintain alignment)
+                    const labels = [];
+                    for (let i = 0; i < result.data.length; i++) {
+                        const date = new Date(result.data[i].timestamp * 1000);
+                        labels.push(date.toLocaleTimeString());
+                        
+                        // Insert null for gap if there's a gap after this point
+                        if (i < result.data.length - 1) {
+                            const currentTime = result.data[i].timestamp * 1000;
+                            const nextTime = result.data[i + 1].timestamp * 1000;
+                            const timeDiff = nextTime - currentTime;
+                            
+                            if (timeDiff > gapThreshold) {
+                                labels.push(null); // null to match null in data arrays and maintain alignment
+                            }
+                        }
+                    }
+                    
+                    // Build data arrays with null values for gaps (using the same gap pattern as labels)
+                    const createDataWithGaps = (getValue) => {
+                        const data = [];
+                        let labelIndex = 0;
+                        for (let i = 0; i < result.data.length; i++) {
+                            data.push(getValue(result.data[i]));
+                            labelIndex++;
+                            
+                            // Insert null for gap if there's a gap after this point
+                            if (i < result.data.length - 1) {
+                                const currentTime = result.data[i].timestamp * 1000;
+                                const nextTime = result.data[i + 1].timestamp * 1000;
+                                const timeDiff = nextTime - currentTime;
+                                
+                                if (timeDiff > gapThreshold) {
+                                    data.push(null);
+                                    labelIndex++; // Skip the empty label
+                                }
+                            }
+                        }
+                        return data;
+                    };
 
                     historicalChart.data.labels = labels;
-                    historicalChart.data.datasets[0].data = result.data.map(d => d.temperature);
-                    historicalChart.data.datasets[1].data = result.data.map(d => d.humidity);
-                    historicalChart.data.datasets[2].data = result.data.map(d => d.pressure);
-                    historicalChart.data.datasets[3].data = result.data.map(d => d.light);
-                    historicalChart.data.datasets[4].data = result.data.map(d => d.gas);
-                    historicalChart.data.datasets[5].data = result.data.map(d => d.aqi || null);
-                    historicalChart.data.datasets[6].data = result.data.map(d => d.color_temperature || null);
+                    historicalChart.data.datasets[0].data = createDataWithGaps(d => d.temperature);
+                    historicalChart.data.datasets[1].data = createDataWithGaps(d => d.humidity);
+                    historicalChart.data.datasets[2].data = createDataWithGaps(d => d.pressure);
+                    historicalChart.data.datasets[3].data = createDataWithGaps(d => d.light);
+                    historicalChart.data.datasets[4].data = createDataWithGaps(d => d.gas);
+                    historicalChart.data.datasets[5].data = createDataWithGaps(d => d.aqi || null);
+                    historicalChart.data.datasets[6].data = createDataWithGaps(d => d.color_temperature || null);
                     
                     historicalChart.update();
+                    
+                    // Update additional charts if they're visible
+                    if (additionalChartsExpanded && tempChart && humidityChart && pressureChart && luminanceChart && gasChart && aqiChart && colorTempChart) {
+                        loadAdditionalChartsData(result.data);
+                    }
                 } else {
                     console.log('No historical data available');
                 }
             } catch (error) {
                 console.error('Error loading historical data:', error);
+            }
+        }
+
+        // Load data for additional charts
+        function loadAdditionalChartsData(data) {
+            if (!data) {
+                // Fetch data if not provided
+                fetch(`/api/historical?hours=${currentHours}`)
+                    .then(response => response.json())
+                    .then(result => {
+                        if (result.success && result.data && result.data.length > 0) {
+                            updateAdditionalCharts(result.data);
+                        }
+                    })
+                    .catch(error => console.error('Error loading additional charts data:', error));
+            } else {
+                updateAdditionalCharts(data);
+            }
+        }
+
+        // Update additional charts with data
+        function updateAdditionalCharts(data) {
+            const gapThreshold = 29 * 60 * 1000; // 29 minutes in milliseconds
+            
+            // Helper to create data with gaps
+            const createDataWithGaps = (getValue) => {
+                const chartData = [];
+                for (let i = 0; i < data.length; i++) {
+                    chartData.push(getValue(data[i]));
+                    
+                    // Insert null for gap if there's a gap after this point
+                    if (i < data.length - 1) {
+                        const currentTime = data[i].timestamp * 1000;
+                        const nextTime = data[i + 1].timestamp * 1000;
+                        const timeDiff = nextTime - currentTime;
+                        
+                        if (timeDiff > gapThreshold) {
+                            chartData.push(null);
+                        }
+                    }
+                }
+                return chartData;
+            };
+            
+            // Create labels with null for gaps (to match null in data arrays)
+            const labels = [];
+            for (let i = 0; i < data.length; i++) {
+                const date = new Date(data[i].timestamp * 1000);
+                labels.push(date.toLocaleTimeString());
+                
+                // Insert null for gap if there's a gap after this point
+                if (i < data.length - 1) {
+                    const currentTime = data[i].timestamp * 1000;
+                    const nextTime = data[i + 1].timestamp * 1000;
+                    const timeDiff = nextTime - currentTime;
+                    
+                    if (timeDiff > gapThreshold) {
+                        labels.push(null);
+                    }
+                }
+            }
+            
+            if (tempChart) {
+                tempChart.data.labels = labels;
+                tempChart.data.datasets[0].data = createDataWithGaps(d => d.temperature || null);
+                tempChart.update();
+            }
+            
+            if (humidityChart) {
+                humidityChart.data.labels = labels;
+                humidityChart.data.datasets[0].data = createDataWithGaps(d => d.humidity || null);
+                humidityChart.update();
+            }
+            
+            if (pressureChart) {
+                pressureChart.data.labels = labels;
+                pressureChart.data.datasets[0].data = createDataWithGaps(d => d.pressure || null);
+                pressureChart.update();
+            }
+            
+            if (luminanceChart) {
+                luminanceChart.data.labels = labels;
+                luminanceChart.data.datasets[0].data = createDataWithGaps(d => d.light || null);
+                luminanceChart.update();
+            }
+            
+            if (gasChart) {
+                gasChart.data.labels = labels;
+                gasChart.data.datasets[0].data = createDataWithGaps(d => d.gas || null);
+                gasChart.update();
+            }
+            
+            if (aqiChart) {
+                aqiChart.data.labels = labels;
+                aqiChart.data.datasets[0].data = createDataWithGaps(d => d.aqi || null);
+                aqiChart.update();
+            }
+            
+            if (colorTempChart) {
+                colorTempChart.data.labels = labels;
+                colorTempChart.data.datasets[0].data = createDataWithGaps(d => d.color_temperature || null);
+                colorTempChart.update();
             }
         }
 
