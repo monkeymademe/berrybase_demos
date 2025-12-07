@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enviro Indoor Sensor Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #3e91be 0%, #cd3c65 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .current-readings {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+
+        .sensor-card {
+            background: white;
+            border-radius: 20px;
+            padding: 18px;
+            min-width: 0; /* Allows flex shrinking */
+        }
+
+        .sensor-title {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sensor-value {
+            font-size: 1.75em;
+            font-weight: bold;
+            color: #6b6a6a;
+            margin-bottom: 10px;
+        }
+
+        .sensor-unit {
+            font-size: 0.6em;
+            color: #999;
+            font-weight: normal;
+        }
+
+        .meter-container {
+            position: relative;
+            height: 100px;
+            margin-top: 15px;
+        }
+
+        .meter-bar {
+            width: 100%;
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3e91be 0%, #cd3c65 100%);
+            border-radius: 15px;
+            transition: width 0.5s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .meter-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                90deg,
+                transparent 0%,
+                rgba(255,255,255,0.3) 50%,
+                transparent 100%
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .meter-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .historical-section {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 1.8em;
+            color: #333;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .time-selector {
+            display: flex;
+            gap: 10px;
+        }
+
+        .time-btn {
+            padding: 8px 16px;
+            border: 2px solid #cd3c65;
+            background: white;
+            color: #cd3c65;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9em;
+        }
+
+        .time-btn:hover {
+            background: #cd3c65;
+            color: white;
+        }
+
+        .time-btn.active {
+            background: #cd3c65;
+            color: white;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+
+        .sleep-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+            opacity: 0.1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease;
+        }
+
+        .sleep-overlay.active {
+            opacity: 0.15;
+        }
+
+        .sleep-icon {
+            font-size: 15em;
+            color: #cd3c65;
+            animation: pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.1; }
+            50% { transform: scale(1.1); opacity: 0.2; }
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: blink 2s infinite;
+        }
+
+        .status-indicator.active {
+            background: #4caf50;
+        }
+
+        .status-indicator.sleeping {
+            background: #ff9800;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .last-update {
+            text-align: center;
+            color: white;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="sleep-overlay" id="sleepOverlay">
+        <div class="sleep-icon">😴</div>
+    </div>
+
+    <div class="container">
+        <h1>
+            <span class="status-indicator" id="statusIndicator"></span>
+            Enviro Indoor Sensor Dashboard
+        </h1>
+
+        <div class="current-readings">
+            <div class="sensor-card">
+                <div class="sensor-title">Temperature</div>
+                <div class="sensor-value">
+                    <span id="tempValue">--</span>
+                    <span class="sensor-unit">°C</span>
+                </div>
+                <div class="meter-container">
+                    <div class="meter-bar">
+                        <div class="meter-fill" id="tempMeter" style="width: 0%"></div>
+                    </div>
+                    <div class="meter-labels">
+                        <span>0°C</span>
+                        <span>50°C</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-card">
+                <div class="sensor-title">Humidity</div>
+                <div class="sensor-value">
+                    <span id="humidityValue">--</span>
+                    <span class="sensor-unit">%</span>
+                </div>
+                <div class="meter-container">
+                    <div class="meter-bar">
+                        <div class="meter-fill" id="humidityMeter" style="width: 0%"></div>
+                    </div>
+                    <div class="meter-labels">
+                        <span>0%</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-card">
+                <div class="sensor-title">Pressure</div>
+                <div class="sensor-value">
+                    <span id="pressureValue">--</span>
+                    <span class="sensor-unit">hPa</span>
+                </div>
+                <div class="meter-container">
+                    <div class="meter-bar">
+                        <div class="meter-fill" id="pressureMeter" style="width: 0%"></div>
+                    </div>
+                    <div class="meter-labels">
+                        <span>900</span>
+                        <span>1100</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-card">
+                <div class="sensor-title">Luminance</div>
+                <div class="sensor-value">
+                    <span id="lightValue">--</span>
+                    <span class="sensor-unit">lux</span>
+                </div>
+                <div class="meter-container">
+                    <div class="meter-bar">
+                        <div class="meter-fill" id="lightMeter" style="width: 0%"></div>
+                    </div>
+                    <div class="meter-labels">
+                        <span>0</span>
+                        <span>1000</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-card">
+                <div class="sensor-title">Gas Resistance</div>
+                <div class="sensor-value">
+                    <span id="gasValue">--</span>
+                    <span class="sensor-unit">Ω</span>
+                </div>
+                <div class="meter-container">
+                    <div class="meter-bar">
+                        <div class="meter-fill" id="gasMeter" style="width: 0%"></div>
+                    </div>
+                    <div class="meter-labels">
+                        <span>0</span>
+                        <span>50k</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-card">
+                <div class="sensor-title">Air Quality</div>
+                <div class="sensor-value">
+                    <span id="aqiValue">--</span>
+                    <span class="sensor-unit">%</span>
+                </div>
+                <div class="meter-container">
+                    <div class="meter-bar">
+                        <div class="meter-fill" id="aqiMeter" style="width: 0%"></div>
+                    </div>
+                    <div class="meter-labels">
+                        <span>0%</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-card">
+                <div class="sensor-title">Color Temp</div>
+                <div class="sensor-value">
+                    <span id="colorTempValue">--</span>
+                    <span class="sensor-unit">K</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 15px;">
+                    <div id="colorPatch" style="width: 50px; height: 50px; border-radius: 8px; border: 2px solid #ddd; background: #fff; flex-shrink: 0;"></div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-size: 0.75em; color: #666; margin-bottom: 3px;">Light Color</div>
+                        <div id="colorDescription" style="font-size: 0.8em; color: #333; font-weight: 500; word-wrap: break-word;">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; color: white; margin: 30px 0; font-size: 1.1em;">
+            <span style="opacity: 0.9;">Data received: </span>
+            <span id="dataReceivedTime" style="font-weight: 600;">--</span>
+        </div>
+
+        <div class="historical-section">
+            <div class="section-title">
+                <span>Historical Data</span>
+                <div class="time-selector">
+                    <button class="time-btn" onclick="loadHistoricalData(6, this)">6h</button>
+                    <button class="time-btn active" onclick="loadHistoricalData(24, this)">24h</button>
+                    <button class="time-btn" onclick="loadHistoricalData(48, this)">48h</button>
+                    <button class="time-btn" onclick="loadHistoricalData(168, this)">7d</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="historicalChart"></canvas>
+            </div>
+        </div>
+
+        <div class="last-update" id="lastUpdate">
+            Last update: Never
+        </div>
+    </div>
+
+    <script>
+        // Chart.js configuration
+        const chartConfig = {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        data: [],
+                        borderColor: 'rgb(205, 60, 101)',
+                        backgroundColor: 'rgba(205, 60, 101, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y',
+                    },
+                    {
+                        label: 'Humidity (%)',
+                        data: [],
+                        borderColor: 'rgb(62, 145, 190)',
+                        backgroundColor: 'rgba(62, 145, 190, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y1',
+                    },
+                    {
+                        label: 'Pressure (hPa)',
+                        data: [],
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y2',
+                    },
+                    {
+                        label: 'Luminance (lux)',
+                        data: [],
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y3',
+                    },
+                    {
+                        label: 'Gas Resistance (Ω)',
+                        data: [],
+                        borderColor: 'rgb(255, 159, 64)',
+                        backgroundColor: 'rgba(255, 159, 64, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y4',
+                    },
+                    {
+                        label: 'Air Quality Index (%)',
+                        data: [],
+                        borderColor: 'rgb(153, 102, 255)',
+                        backgroundColor: 'rgba(153, 102, 255, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y5',
+                    },
+                    {
+                        label: 'Color Temperature (K)',
+                        data: [],
+                        borderColor: 'rgb(255, 206, 86)',
+                        backgroundColor: 'rgba(255, 206, 86, 0.1)',
+                        tension: 0.4,
+                        yAxisID: 'y6',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                    },
+                    tooltip: {
+                        enabled: true,
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)'
+                        }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: 'Humidity (%)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    },
+                    y2: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Pressure (hPa)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    },
+                    y3: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Luminance (lux)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    },
+                    y4: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Gas Resistance (Ω)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    },
+                    y5: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Air Quality Index (%)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    },
+                    y6: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'Color Temperature (K)'
+                        },
+                        grid: {
+                            drawOnChartArea: false,
+                        },
+                    }
+                }
+            }
+        };
+
+        let historicalChart = null;
+        let currentHours = 24;
+
+        // Initialize chart
+        function initChart() {
+            const ctx = document.getElementById('historicalChart').getContext('2d');
+            historicalChart = new Chart(ctx, chartConfig);
+        }
+
+        // Convert Kelvin to RGB (color temperature algorithm)
+        function kelvinToRGB(kelvin) {
+            // Clamp to reasonable range
+            kelvin = Math.max(1000, Math.min(40000, kelvin));
+            
+            let temp = kelvin / 100;
+            let red, green, blue;
+
+            // Calculate red
+            if (temp <= 66) {
+                red = 255;
+            } else {
+                red = temp - 60;
+                red = 329.698727446 * Math.pow(red, -0.1332047592);
+                red = Math.max(0, Math.min(255, red));
+            }
+
+            // Calculate green
+            if (temp <= 66) {
+                green = temp;
+                green = 99.4708025861 * Math.log(green) - 161.1195681661;
+                green = Math.max(0, Math.min(255, green));
+            } else {
+                green = temp - 60;
+                green = 288.1221695283 * Math.pow(green, -0.0755148492);
+                green = Math.max(0, Math.min(255, green));
+            }
+
+            // Calculate blue
+            if (temp >= 66) {
+                blue = 255;
+            } else {
+                if (temp <= 19) {
+                    blue = 0;
+                } else {
+                    blue = temp - 10;
+                    blue = 138.5177312231 * Math.log(blue) - 305.0447927307;
+                    blue = Math.max(0, Math.min(255, blue));
+                }
+            }
+
+            return {
+                r: Math.round(red),
+                g: Math.round(green),
+                b: Math.round(blue)
+            };
+        }
+
+        // Get color description from Kelvin
+        function getColorDescription(kelvin) {
+            if (kelvin < 2000) return 'Very Warm (Candlelight)';
+            if (kelvin < 3000) return 'Warm (Incandescent)';
+            if (kelvin < 4000) return 'Neutral Warm';
+            if (kelvin < 5000) return 'Neutral (Fluorescent)';
+            if (kelvin < 6500) return 'Cool White';
+            if (kelvin < 8000) return 'Daylight';
+            return 'Very Cool (Sky)';
+        }
+
+        // Update meter bars
+        function updateMeters(data) {
+            if (!data) return;
+
+            // Temperature (0-50°C range)
+            if (data.temperature !== null && data.temperature !== undefined) {
+                const tempPercent = Math.min(100, Math.max(0, (data.temperature / 50) * 100));
+                document.getElementById('tempMeter').style.width = tempPercent + '%';
+                document.getElementById('tempValue').textContent = data.temperature.toFixed(1);
+            }
+
+            // Humidity (0-100% range)
+            if (data.humidity !== null && data.humidity !== undefined) {
+                const humidityPercent = Math.min(100, Math.max(0, data.humidity));
+                document.getElementById('humidityMeter').style.width = humidityPercent + '%';
+                document.getElementById('humidityValue').textContent = data.humidity.toFixed(1);
+            }
+
+            // Pressure (900-1100 hPa range)
+            if (data.pressure !== null && data.pressure !== undefined) {
+                const pressurePercent = Math.min(100, Math.max(0, ((data.pressure - 900) / 200) * 100));
+                document.getElementById('pressureMeter').style.width = pressurePercent + '%';
+                document.getElementById('pressureValue').textContent = data.pressure.toFixed(1);
+            }
+
+            // Luminance (0-1000 lux range, but can be higher)
+            if (data.light !== null && data.light !== undefined) {
+                const lightPercent = Math.min(100, Math.max(0, (data.light / 1000) * 100));
+                document.getElementById('lightMeter').style.width = lightPercent + '%';
+                document.getElementById('lightValue').textContent = data.light.toFixed(0);
+            }
+
+            // Gas Resistance (0-50000 Ω range)
+            if (data.gas !== null && data.gas !== undefined) {
+                const gasPercent = Math.min(100, Math.max(0, (data.gas / 50000) * 100));
+                document.getElementById('gasMeter').style.width = gasPercent + '%';
+                // Format gas resistance nicely (show kΩ if >= 1000)
+                const gasValueEl = document.getElementById('gasValue');
+                const gasUnitEl = gasValueEl.nextElementSibling;
+                if (data.gas >= 1000) {
+                    gasValueEl.textContent = (data.gas / 1000).toFixed(1);
+                    gasUnitEl.textContent = 'kΩ';
+                } else {
+                    gasValueEl.textContent = data.gas.toFixed(0);
+                    gasUnitEl.textContent = 'Ω';
+                }
+            }
+
+            // Air Quality Index (0-100% range)
+            if (data.aqi !== null && data.aqi !== undefined) {
+                const aqiPercent = Math.min(100, Math.max(0, data.aqi));
+                document.getElementById('aqiMeter').style.width = aqiPercent + '%';
+                document.getElementById('aqiValue').textContent = data.aqi.toFixed(1);
+            }
+
+            // Color Temperature
+            if (data.color_temperature !== null && data.color_temperature !== undefined) {
+                document.getElementById('colorTempValue').textContent = Math.round(data.color_temperature);
+                const rgb = kelvinToRGB(data.color_temperature);
+                const colorPatch = document.getElementById('colorPatch');
+                colorPatch.style.backgroundColor = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+                document.getElementById('colorDescription').textContent = getColorDescription(data.color_temperature);
+            }
+        }
+
+        // Load current sensor readings
+        async function loadCurrentData() {
+            try {
+                const response = await fetch('/api/current');
+                const result = await response.json();
+
+                if (result.success && result.data) {
+                    updateMeters(result.data);
+                    
+                    const date = new Date(result.data.timestamp * 1000);
+                    const formattedDate = date.toLocaleString();
+                    
+                    // Update "Data received" timestamp
+                    document.getElementById('dataReceivedTime').textContent = formattedDate;
+                    
+                    // Update "Last update" at bottom
+                    document.getElementById('lastUpdate').textContent = 
+                        'Last update: ' + formattedDate;
+                } else {
+                    // No data available
+                    document.getElementById('dataReceivedTime').textContent = 'No data available';
+                    document.getElementById('lastUpdate').textContent = 
+                        'Last update: No data available';
+                }
+
+                // Update sleep overlay
+                const sleepOverlay = document.getElementById('sleepOverlay');
+                const statusIndicator = document.getElementById('statusIndicator');
+                
+                if (result.sleeping) {
+                    sleepOverlay.classList.add('active');
+                    statusIndicator.classList.remove('active');
+                    statusIndicator.classList.add('sleeping');
+                } else {
+                    sleepOverlay.classList.remove('active');
+                    statusIndicator.classList.remove('sleeping');
+                    statusIndicator.classList.add('active');
+                }
+            } catch (error) {
+                console.error('Error loading current data:', error);
+            }
+        }
+
+        // Load historical data
+        async function loadHistoricalData(hours, buttonElement) {
+            currentHours = hours;
+            
+            // Update active button
+            document.querySelectorAll('.time-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            }
+
+            try {
+                const response = await fetch(`/api/historical?hours=${hours}`);
+                const result = await response.json();
+
+                if (result.success && result.data && result.data.length > 0) {
+                    const labels = result.data.map(d => {
+                        const date = new Date(d.timestamp * 1000);
+                        return date.toLocaleTimeString();
+                    });
+
+                    historicalChart.data.labels = labels;
+                    historicalChart.data.datasets[0].data = result.data.map(d => d.temperature);
+                    historicalChart.data.datasets[1].data = result.data.map(d => d.humidity);
+                    historicalChart.data.datasets[2].data = result.data.map(d => d.pressure);
+                    historicalChart.data.datasets[3].data = result.data.map(d => d.light);
+                    historicalChart.data.datasets[4].data = result.data.map(d => d.gas);
+                    historicalChart.data.datasets[5].data = result.data.map(d => d.aqi || null);
+                    historicalChart.data.datasets[6].data = result.data.map(d => d.color_temperature || null);
+                    
+                    historicalChart.update();
+                } else {
+                    console.log('No historical data available');
+                }
+            } catch (error) {
+                console.error('Error loading historical data:', error);
+            }
+        }
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            loadCurrentData();
+            loadHistoricalData(24);
+
+            // Update current data every 5 seconds
+            setInterval(loadCurrentData, 5000);
+            
+            // Update historical data every 30 seconds
+            setInterval(() => loadHistoricalData(currentHours), 30000);
+        });
+    </script>
+</body>
+</html>
+
