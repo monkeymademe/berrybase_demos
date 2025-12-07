@@ -85,42 +85,57 @@ Once the Enviro board starts sending data, open your web browser and navigate to
 - Local: `http://localhost:5000`
 - Network: `http://<your-pi-ip>:5000`
 
-## Running as a Service (Optional)
+## Running as a Service (Recommended)
 
-To run the web app automatically on boot, create a systemd service file:
-
-```bash
-sudo nano /etc/systemd/system/enviro-web.service
-```
-
-Add:
-```ini
-[Unit]
-Description=Enviro Indoor Web Dashboard
-After=network.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/berrybase_demos/envrio_demo
-ExecStart=/usr/bin/python3 /home/pi/berrybase_demos/envrio_demo/web_app.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start the service:
+To run the dashboard as a systemd service that starts automatically at boot, use the provided setup script:
 
 ```bash
-sudo systemctl enable enviro-web.service
-sudo systemctl start enviro-web.service
+cd /home/pi/berrybase_demos/envrio_demo
+sudo ./setup_service.sh
 ```
 
-Check status:
+The script will:
+- Create the systemd service file
+- Enable the service to start at boot
+- Optionally start the service immediately
+- Provide useful management commands
+
+### Manual Service Management
+
+After setup, you can manage the service with:
+
 ```bash
-sudo systemctl status enviro-web.service
+# Check status
+sudo systemctl status enviro-dashboard.service
+
+# View logs
+sudo journalctl -u enviro-dashboard.service -f
+
+# Start/Stop/Restart
+sudo systemctl start enviro-dashboard.service
+sudo systemctl stop enviro-dashboard.service
+sudo systemctl restart enviro-dashboard.service
+
+# Disable auto-start (if needed)
+sudo systemctl disable enviro-dashboard.service
 ```
+
+## Kiosk Mode Setup (Optional)
+
+To display the dashboard in fullscreen kiosk mode on a connected display:
+
+```bash
+sudo ./kiosk-setup.sh
+```
+
+This script will:
+- Install Chromium browser (if needed)
+- Create a kiosk service that displays the dashboard in fullscreen
+- Set up autologin (optional)
+- Disable screen blanking and screensaver
+- Enable the kiosk service to start at boot
+
+The kiosk service depends on the web server service, so it will automatically start the dashboard server if needed.
 
 ## File Structure
 
@@ -131,7 +146,10 @@ envrio_demo/
 │   └── index.html          # Web UI dashboard
 ├── sensor_data.db          # SQLite database (created automatically)
 ├── requirements.txt        # Python dependencies
-├── start_services.sh       # Convenience script (now just starts web app)
+├── setup_service.sh         # Automated service setup script
+├── kiosk-setup.sh           # Kiosk mode setup script (fullscreen display)
+├── enviro-dashboard.service # Systemd service file template
+├── start_services.sh       # Convenience script (manual start)
 └── README.md               # This file
 ```
 
