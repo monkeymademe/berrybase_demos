@@ -402,5 +402,5 @@ if __name__ == '__main__':
     logger.info("Data endpoint: http://<pi-ip>:5000/api/data")
     logger.info("Dashboard: http://<pi-ip>:5000")
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
 
