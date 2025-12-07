@@ -141,16 +141,20 @@ The kiosk service depends on the web server service, so it will automatically st
 
 ```
 envrio_demo/
-├── web_app.py               # Flask web application (receives data & serves UI)
+├── web_app.py                      # Flask web application (receives data & serves UI)
 ├── templates/
-│   └── index.html          # Web UI dashboard
-├── sensor_data.db          # SQLite database (created automatically)
-├── requirements.txt        # Python dependencies
-├── setup_service.sh         # Automated service setup script
-├── kiosk-setup.sh           # Kiosk mode setup script (fullscreen display)
-├── enviro-dashboard.service # Systemd service file template
-├── start_services.sh       # Convenience script (manual start)
-└── README.md               # This file
+│   └── index.html                 # Web UI dashboard
+├── sensor_data.db                 # SQLite database (created automatically)
+├── cleanup_database.py             # Database cleanup script (keeps last 8 days)
+├── simulate_data.py               # Data simulation script for testing
+├── requirements.txt                # Python dependencies
+├── setup_service.sh               # Automated service setup script
+├── kiosk-setup.sh                  # Kiosk mode setup script (fullscreen display)
+├── enviro-dashboard.service        # Systemd service file template
+├── enviro-dashboard-cleanup.service # Systemd service for cleanup
+├── enviro-dashboard-cleanup.timer  # Systemd timer for daily cleanup
+├── start_services.sh               # Convenience script (manual start)
+└── README.md                       # This file
 ```
 
 ## API Endpoints
@@ -200,11 +204,46 @@ envrio_demo/
 - Use `http://` not `https://` (unless you've set up SSL)
 - Make sure port 5000 matches your web app port
 
+## Database Cleanup
+
+The database automatically keeps only the last 8 days of data to prevent unlimited growth. A cleanup script runs daily at 2:00 AM via a systemd timer.
+
+### Manual Cleanup
+
+You can run the cleanup script manually at any time:
+
+```bash
+python3 cleanup_database.py
+```
+
+### Setting Up Automatic Cleanup (Optional)
+
+If you want to set up automatic daily cleanup:
+
+```bash
+# Copy the timer and service files
+sudo cp enviro-dashboard-cleanup.service /etc/systemd/system/
+sudo cp enviro-dashboard-cleanup.timer /etc/systemd/system/
+
+# Update the paths in the service file to match your installation
+sudo nano /etc/systemd/system/enviro-dashboard-cleanup.service
+
+# Enable and start the timer
+sudo systemctl daemon-reload
+sudo systemctl enable enviro-dashboard-cleanup.timer
+sudo systemctl start enviro-dashboard-cleanup.timer
+
+# Check status
+sudo systemctl status enviro-dashboard-cleanup.timer
+```
+
+The cleanup runs daily at 2:00 AM and removes all data older than 8 days.
+
 ## Notes
 
 - The system detects "sleeping" state when no data is received for 10+ minutes
 - Data gaps in graphs are normal when the Pi is turned off at night
-- The database file (`sensor_data.db`) will grow over time - consider periodic cleanup if needed
+- The database automatically keeps only the last 8 days of data (see Database Cleanup section above)
 - The Enviro board uses deep sleep between readings to conserve battery power
 - Readings are uploaded in batches for power efficiency
 
