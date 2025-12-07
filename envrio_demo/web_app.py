@@ -353,8 +353,9 @@ def api_stats():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Get min/max/avg for last 24 hours
-    cutoff_time = datetime.now().timestamp() - (24 * 3600)
+    # Get hours parameter (default 24 hours)
+    hours = int(request.args.get('hours', 24))
+    cutoff_time = datetime.now().timestamp() - (hours * 3600)
     
     cursor.execute("""
         SELECT 
@@ -372,7 +373,13 @@ def api_stats():
             AVG(light) as avg_light,
             MIN(gas) as min_gas,
             MAX(gas) as max_gas,
-            AVG(gas) as avg_gas
+            AVG(gas) as avg_gas,
+            MIN(aqi) as min_aqi,
+            MAX(aqi) as max_aqi,
+            AVG(aqi) as avg_aqi,
+            MIN(color_temperature) as min_color_temp,
+            MAX(color_temperature) as max_color_temp,
+            AVG(color_temperature) as avg_color_temp
         FROM sensor_readings
         WHERE timestamp >= ?
     """, (cutoff_time,))
@@ -383,12 +390,14 @@ def api_stats():
     if row:
         return jsonify({
             "success": True,
-            "stats": dict(row)
+            "stats": dict(row),
+            "hours": hours
         })
     else:
         return jsonify({
             "success": False,
-            "stats": None
+            "stats": None,
+            "hours": hours
         })
 
 if __name__ == '__main__':
