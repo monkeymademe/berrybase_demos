@@ -36,6 +36,7 @@ known_faces_file = 'known_faces.pkl'
 known_faces = {}  # {face_id: {'name': str, 'embedding': np.array, 'image': np.array}}
 face_id_counter = 0
 match_debug_count = 0  # Debug counter for face matching
+MAX_KNOWN_FACES = 5  # Maximum number of known faces to keep (FIFO - oldest removed when limit reached)
 
 # Face detection/recognition models
 face_detector = None
@@ -44,6 +45,10 @@ face_recognizer = None
 # Capture request
 capture_requested = False
 capture_name = ""
+capture_request_frame = 0  # Track when capture was requested (frame count)
+detected_faces_for_selection = []  # Store detected faces with images for selection overlay
+waiting_for_selection = False  # Flag to prevent auto-capture when waiting for user selection
+detected_faces_lock = threading.Lock()
 
 def cleanup_camera():
     """Clean up camera and Hailo resources"""
@@ -89,6 +94,16 @@ def load_known_faces():
             print(f"⚠ Error loading known faces: {e}")
             known_faces = {}
             face_id_counter = 0
+
+def enforce_face_limit():
+    """Enforce MAX_KNOWN_FACES limit by removing oldest face (lowest ID)"""
+    global known_faces
+    if len(known_faces) >= MAX_KNOWN_FACES:
+        # Find the oldest face (lowest ID number)
+        oldest_id = min(known_faces.keys())
+        oldest_name = known_faces[oldest_id]['name']
+        del known_faces[oldest_id]
+        print(f"⚠ Removed oldest face '{oldest_name}' (ID: {oldest_id}) to maintain limit of {MAX_KNOWN_FACES} faces")
 
 def save_known_faces():
     """Save known faces to disk"""
@@ -430,7 +445,7 @@ def start_camera():
         
         # Start frame capture thread
         def frame_capture_thread():
-            global streaming_output, capture_requested, capture_name, face_id_counter
+            global streaming_output, capture_requested, capture_name, face_id_counter, detected_faces_for_selection, capture_request_frame, waiting_for_selection
             
             class StreamingOutput(io.BufferedIOBase):
                 def __init__(self):
@@ -479,33 +494,125 @@ def start_camera():
                     # Detect faces
                     faces = detect_faces(frame_bgr)
                     
-                    # Handle capture request
-                    if capture_requested and len(faces) > 0:
-                        # Use the largest face
-                        largest_face = max(faces, key=lambda f: f[2] * f[3])
-                        x, y, w, h = largest_face
-                        face_roi = frame_bgr[y:y+h, x:x+w].copy()  # Make a copy to ensure it's saved
+                    # Limit to top 5 largest faces (by area) for performance and clarity
+                    MAX_FACES = 5
+                    original_face_count = len(faces)
+                    if original_face_count > MAX_FACES:
+                        # Sort by face area (width * height), largest first
+                        faces = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)[:MAX_FACES]
+                        if frame_count % 30 == 0:  # Print occasionally to avoid spam
+                            print(f"⚠ Limited face detection to {MAX_FACES} largest faces (out of {original_face_count} detected)")
+                    
+                    # Handle capture request - keep checking every frame until timeout
+                    if capture_requested:
+                        # Track when capture was first requested
+                        if capture_request_frame == 0:
+                            capture_request_frame = frame_count
                         
-                        # Extract embedding
-                        face_embedding = extract_face_embedding(face_roi)
+                        frames_since_request = frame_count - capture_request_frame
+                        max_check_frames = 90  # Check for ~3 seconds (at ~30fps)
                         
-                        # Store face
-                        face_id_counter += 1
-                        name_to_save = capture_name if capture_name else f"Person {face_id_counter}"
-                        known_faces[face_id_counter] = {
-                            'name': name_to_save,
-                            'embedding': face_embedding,
-                            'image': face_roi.copy()  # Store a copy of the image
-                        }
-                        save_known_faces()
-                        print(f"✓ Captured face #{face_id_counter}: {name_to_save} (image shape: {face_roi.shape})")
+                        if len(faces) > 0:
+                            # Check which faces are unknown (not recognized)
+                            unknown_faces = []
+                            print(f"🔍 Capture requested (frame {frame_count}): checking {len(faces)} detected faces...")
+                            for idx, (x, y, w, h) in enumerate(faces):
+                                face_roi = frame_bgr[y:y+h, x:x+w]
+                                face_embedding = extract_face_embedding(face_roi)
+                                name, similarity = match_face(face_embedding)
+                                
+                                name_str = name if name else 'None'
+                                print(f"  Face {idx}: name={name_str}, similarity={similarity:.1%}")
+                                
+                                # Only include unknown faces (not recognized or low similarity)
+                                # A face is unknown if: no name returned OR similarity < 30%
+                                is_unknown = (name is None) or (similarity < 0.30)
+                                
+                                if is_unknown:
+                                    print(f"  ✓ Face {idx} is UNKNOWN - adding to selection list")
+                                    # Store the face ROI for later capture
+                                    face_roi_copy = face_roi.copy()
+                                    # Encode face image to base64 for display
+                                    face_resized = cv2.resize(face_roi_copy, (150, 150))
+                                    success, buffer = cv2.imencode('.jpg', face_resized, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                                    if success:
+                                        img_base64 = base64.b64encode(buffer.tobytes()).decode('utf-8')
+                                        # Also encode the full-size ROI for storage
+                                        success_full, buffer_full = cv2.imencode('.jpg', face_roi_copy, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                                        img_full_base64 = base64.b64encode(buffer_full.tobytes()).decode('utf-8') if success_full else img_base64
+                                        unknown_faces.append({
+                                            'index': idx,
+                                            'x': int(x), 'y': int(y), 'w': int(w), 'h': int(h),
+                                            'image': img_base64,  # Thumbnail for display
+                                            'image_full': img_full_base64,  # Full size for storage
+                                            'embedding': face_embedding.tolist(),  # Convert numpy array to list for JSON
+                                            'face_roi_data': None  # Will be set when capturing
+                                        })
+                                else:
+                                    print(f"  ✗ Face {idx} is KNOWN ({name} at {similarity:.1%}) - skipping")
+                            
+                            print(f"📊 Found {len(unknown_faces)} unknown faces out of {len(faces)} total")
+                            
+                            # Only update detected_faces_for_selection if we're not already waiting for user selection
+                            # This prevents overwriting the faces while the user is selecting
+                            if len(unknown_faces) > 0 and not waiting_for_selection:
+                                with detected_faces_lock:
+                                    detected_faces_for_selection = unknown_faces
+                                    # Store frame dimensions for validation
+                                    for face_data in unknown_faces:
+                                        face_data['frame_h'] = frame_bgr.shape[0]
+                                        face_data['frame_w'] = frame_bgr.shape[1]
+                            
+                            # If only one unknown face, capture it directly (but only if we're not waiting for selection)
+                            if len(unknown_faces) == 1 and not waiting_for_selection:
+                                face_data = unknown_faces[0]
+                                # Get the face ROI from current frame
+                                face_roi = frame_bgr[face_data['y']:face_data['y']+face_data['h'], 
+                                                   face_data['x']:face_data['x']+face_data['w']].copy()
+                                face_embedding = np.array(face_data['embedding'], dtype=np.float32)
+                                
+                                # Store face
+                                enforce_face_limit()  # Remove oldest if at limit
+                                face_id_counter += 1
+                                name_to_save = capture_name if capture_name else f"Person {face_id_counter}"
+                                known_faces[face_id_counter] = {
+                                    'name': name_to_save,
+                                    'embedding': face_embedding,
+                                    'image': face_roi.copy()
+                                }
+                                save_known_faces()
+                                print(f"✓ Captured face #{face_id_counter}: {name_to_save}")
+                                
+                                capture_requested = False
+                                capture_name = ""
+                                capture_request_frame = 0
+                                waiting_for_selection = False
+                                with detected_faces_lock:
+                                    detected_faces_for_selection = []
+                            # If multiple unknown faces, keep capture_requested = True for user selection
+                            elif len(unknown_faces) > 1:
+                                print(f"✓ Found {len(unknown_faces)} unknown faces - waiting for user selection")
+                                waiting_for_selection = True  # Set flag to prevent auto-capture
+                                # Keep capture_requested = True, user will select which face to capture
+                            # If no unknown faces in this frame, keep checking (don't clear yet)
+                            else:
+                                if frames_since_request % 10 == 0:  # Print every 10 frames
+                                    print(f"⚠ Frame {frame_count}: All {len(faces)} detected faces are already known, continuing to check...")
+                        elif len(faces) == 0:
+                            # No face detected when capture was requested
+                            if frames_since_request % 30 == 0:  # Print every 30 frames to avoid spam
+                                print(f"⚠ Frame {frame_count}: Capture requested but no face detected, continuing to check...")
                         
-                        capture_requested = False
-                        capture_name = ""
-                    elif capture_requested and len(faces) == 0:
-                        # No face detected when capture was requested
-                        if frame_count % 30 == 0:  # Print every 30 frames to avoid spam
-                            print("⚠ Capture requested but no face detected")
+                        # Clear capture request if we've been checking for too long
+                        # BUT: Don't timeout if we're waiting for user selection - let them take their time
+                        if frames_since_request >= max_check_frames and not waiting_for_selection:
+                            print(f"⚠ Timeout: Cleared capture request after {max_check_frames} frames")
+                            capture_requested = False
+                            capture_name = ""
+                            capture_request_frame = 0
+                            waiting_for_selection = False
+                            with detected_faces_lock:
+                                detected_faces_for_selection = []
                     
                     # Recognize faces (skip recognition on some frames for performance)
                     should_recognize = (frame_count - last_recognition_frame) > recognition_skip_frames
@@ -537,7 +644,7 @@ def start_camera():
                                 # Combined distance metric (stricter matching)
                                 combined_dist = dist + size_diff * 200
                                 
-                                # Match if within 80 pixels and similar size (stricter threshold)
+                                # Match if within 100 pixels and similar size (stricter threshold)
                                 if combined_dist < 100 and combined_dist < min_distance:
                                     min_distance = combined_dist
                                     matched_tracker_key = (tx, ty, ts)
@@ -742,20 +849,19 @@ def index():
         }
         .feed-container {
             display: flex;
+            flex-wrap: nowrap;
             gap: 20px;
             width: 100%;
             margin-bottom: 20px;
         }
         .feed-description {
             width: 20%;
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 15px;
+            min-width: 250px;
+            max-width: 20%;
             display: flex;
-            align-items: center;
-            color: var(--text-primary);
-            font-size: 1.1em;
-            line-height: 1.5;
+            flex-direction: column;
+            gap: 20px;
+            flex-shrink: 0;
         }
         .video-container {
             flex: 1;
@@ -777,20 +883,17 @@ def index():
             background: var(--card-bg);
             border-radius: 15px;
             padding: 20px;
-            margin-bottom: 20px;
         }
 
         .control-group {
             display: flex;
-            gap: 15px;
-            align-items: center;
-            flex-wrap: wrap;
+            flex-direction: column;
+            gap: 10px;
             margin-bottom: 15px;
         }
 
         input[type="text"] {
-            flex: 1;
-            min-width: 200px;
+            width: 100%;
             padding: 12px;
             border: 2px solid var(--border-color);
             border-radius: 8px;
@@ -800,6 +903,7 @@ def index():
         }
 
         button {
+            width: 100%;
             padding: 12px 24px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -823,17 +927,20 @@ def index():
             background: var(--card-bg);
             border-radius: 15px;
             padding: 20px;
+            flex: 1;
+            overflow-y: auto;
         }
 
         .known-faces h2 {
             margin-bottom: 15px;
             color: var(--text-primary);
+            font-size: 1.2em;
         }
 
         .faces-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         .face-item {
@@ -846,7 +953,8 @@ def index():
 
         .face-item img {
             width: 100%;
-            height: 120px;
+            height: auto;
+            max-height: 100px;
             object-fit: cover;
             border-radius: 5px;
             margin-bottom: 8px;
@@ -896,6 +1004,103 @@ def index():
             height: 28px;
             fill: white;
         }
+        
+        /* Face selection overlay */
+        .face-selection-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .face-selection-overlay.active {
+            display: flex;
+        }
+        .face-selection-modal {
+            background: var(--card-bg);
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .face-selection-modal h2 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: var(--text-primary);
+        }
+        .face-selection-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .face-selection-item {
+            cursor: pointer;
+            border: 3px solid transparent;
+            border-radius: 10px;
+            padding: 10px;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+        .face-selection-item:hover {
+            border-color: var(--accent-color);
+            background: var(--bg-secondary);
+        }
+        .face-selection-item.selected {
+            border-color: var(--accent-color);
+            background: var(--bg-secondary);
+        }
+        .face-selection-item img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+        }
+        .face-selection-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        .face-selection-actions button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .face-selection-actions button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+        .btn-cancel {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-cancel:hover:not(:disabled) {
+            opacity: 0.9;
+        }
+        .btn-confirm {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-confirm:hover:not(:disabled) {
+            opacity: 0.9;
+        }
+        .btn-confirm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
     </style>
 </head>
 <body>
@@ -911,37 +1116,53 @@ def index():
         </div>
         <div class="feed-container">
             <div class="feed-description">
-                <p>Detect, capture, and recognize faces in real-time.</p>
+                <div class="controls">
+                    <div class="control-group">
+                        <input type="text" id="personName" placeholder="Enter person's name..." />
+                        <button onclick="captureFace()">Capture Face</button>
+                    </div>
+                    <div id="status"></div>
+                </div>
+                <div class="known-faces">
+                    <h2>Known Faces</h2>
+                    <div id="facesList" class="faces-list">
+                        <p>No faces captured yet. Use the capture button above to add faces.</p>
+                    </div>
+                </div>
             </div>
             <div class="video-container">
                 <img src="{{ url_for('video_feed') }}" alt="Video Stream">
             </div>
         </div>
-
-        <div class="controls">
-            <div class="control-group">
-                <input type="text" id="personName" placeholder="Enter person's name..." />
-                <button onclick="captureFace()">Capture Face</button>
-                <button onclick="refreshFaces()">Refresh List</button>
-            </div>
-            <div id="status"></div>
-        </div>
-
-        <div class="known-faces">
-            <h2>Known Faces</h2>
-            <div id="facesList" class="faces-list">
-                <p>No faces captured yet. Use the capture button above to add faces.</p>
+    </div>
+    
+    <!-- Face Selection Overlay -->
+    <div id="faceSelectionOverlay" class="face-selection-overlay">
+        <div class="face-selection-modal">
+            <h2>Select Face to Capture</h2>
+            <p id="selectionMessage" style="color: var(--text-secondary); margin-bottom: 20px;"></p>
+            <div id="faceSelectionGrid" class="face-selection-grid"></div>
+            <div class="face-selection-actions">
+                <button class="btn-confirm" id="confirmSelectionBtn" onclick="confirmFaceSelection()" disabled>Accept</button>
+                <button class="btn-cancel" onclick="cancelFaceSelection()">Cancel</button>
             </div>
         </div>
     </div>
 
     <script>
+        let selectedFaceIndex = null;
+        let currentCaptureName = '';
+        let availableFaces = [];
+        
         function captureFace() {
             const name = document.getElementById('personName').value.trim();
             if (!name) {
                 showStatus('Please enter a name first', 'error');
                 return;
             }
+            
+            currentCaptureName = name;
+            selectedFaceIndex = null;
 
             fetch('/capture_face', {
                 method: 'POST',
@@ -950,17 +1171,119 @@ def index():
             })
             .then(response => response.json())
             .then(data => {
-                if (data.success) {
-                    showStatus(`Face captured: ${name}`, 'success');
+                console.log('Capture response:', data); // Debug log
+                if (data.needs_selection && data.faces) {
+                    // Show selection overlay
+                    console.log(`Showing selection overlay with ${data.faces.length} faces`);
+                    availableFaces = data.faces;
+                    showFaceSelection(data.faces, name);
+                } else if (data.success) {
+                    showStatus(data.message, 'success');
                     document.getElementById('personName').value = '';
-                    setTimeout(refreshFaces, 500);
+                    refreshFaces();
                 } else {
-                    showStatus(`Error: ${data.message}`, 'error');
+                    console.error('Capture failed:', data.message);
+                    showStatus(data.message, 'error');
                 }
             })
             .catch(error => {
                 showStatus(`Error: ${error.message}`, 'error');
             });
+        }
+        
+        function showFaceSelection(faces, name) {
+            const overlay = document.getElementById('faceSelectionOverlay');
+            const grid = document.getElementById('faceSelectionGrid');
+            const message = document.getElementById('selectionMessage');
+            const confirmBtn = document.getElementById('confirmSelectionBtn');
+            
+            message.textContent = `Found ${faces.length} unknown faces. Select the face you want to capture as "${name}".`;
+            grid.innerHTML = '';
+            selectedFaceIndex = null;
+            confirmBtn.disabled = true;
+            
+            // Store the faces array for later reference
+            availableFaces = faces;
+            
+            faces.forEach((face, displayIndex) => {
+                const item = document.createElement('div');
+                item.className = 'face-selection-item';
+                // Use the display index (array position) as the face_index for backend
+                // The backend uses this as an array index into detected_faces_for_selection
+                item.onclick = () => selectFace(displayIndex, item);
+                
+                const img = document.createElement('img');
+                img.src = 'data:image/jpeg;base64,' + face.image;
+                img.alt = `Face ${displayIndex + 1}`;
+                
+                const label = document.createElement('div');
+                label.textContent = `Face ${displayIndex + 1}`;
+                label.style.marginTop = '8px';
+                label.style.color = 'var(--text-primary)';
+                
+                item.appendChild(img);
+                item.appendChild(label);
+                grid.appendChild(item);
+            });
+            
+            overlay.classList.add('active');
+        }
+        
+        function selectFace(faceIndex, element) {
+            // Remove selected class from all items
+            document.querySelectorAll('.face-selection-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            // Add selected class to clicked item
+            element.classList.add('selected');
+            selectedFaceIndex = faceIndex; // This is the array index (0, 1, 2...)
+            console.log(`Selected face at array index: ${faceIndex}`);
+            document.getElementById('confirmSelectionBtn').disabled = false;
+        }
+        
+        function confirmFaceSelection() {
+            if (selectedFaceIndex === null || !currentCaptureName) {
+                return;
+            }
+            
+            fetch('/capture_specific_face', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: currentCaptureName,
+                    face_index: selectedFaceIndex
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showStatus(data.message, 'success');
+                    document.getElementById('personName').value = '';
+                    cancelFaceSelection();
+                    refreshFaces();
+                } else {
+                    showStatus(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showStatus(`Error: ${error.message}`, 'error');
+            });
+        }
+        
+        function cancelFaceSelection() {
+            const overlay = document.getElementById('faceSelectionOverlay');
+            overlay.classList.remove('active');
+            selectedFaceIndex = null;
+            currentCaptureName = '';
+            availableFaces = [];
+            
+            // Also cancel the capture request on server
+            fetch('/capture_face', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: '', cancel: true})
+            }).catch(() => {});
         }
 
         function refreshFaces() {
@@ -994,8 +1317,6 @@ def index():
         }
 
         function deleteFace(faceId) {
-            if (!confirm('Delete this face?')) return;
-            
             fetch('/delete_face', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1081,8 +1402,8 @@ def video_feed():
 
 @app.route('/capture_face', methods=['POST'])
 def capture_face():
-    """Capture and store a face"""
-    global capture_requested, capture_name
+    """Capture and store a face - returns detected faces if multiple unknown"""
+    global capture_requested, capture_name, detected_faces_for_selection, waiting_for_selection
     data = request.json
     name = data.get('name', '').strip()
     
@@ -1091,15 +1412,112 @@ def capture_face():
     
     capture_name = name
     capture_requested = True
+    capture_request_frame = 0  # Will be set by frame thread
+    waiting_for_selection = False  # Reset flag when new capture is requested
+    print(f"📸 Capture requested for '{name}'")
     
     # Wait a bit for the frame capture thread to process
-    time.sleep(1)
+    # Try multiple times to catch faces (they might not be detected immediately)
+    faces_for_selection = []
+    for attempt in range(6):  # Try 6 times (up to 3 seconds)
+        time.sleep(0.5)
+        with detected_faces_lock:
+            faces_for_selection = detected_faces_for_selection.copy()
+        if len(faces_for_selection) > 0 or not capture_requested:
+            # Either we found faces or the request was processed (single face captured)
+            break
     
-    if capture_requested:  # Still requested means it wasn't processed
+    print(f"📊 After waiting: found {len(faces_for_selection)} unknown faces, capture_requested={capture_requested}")
+    
+    if len(faces_for_selection) > 1:
+        # Multiple unknown faces detected - return them for user selection
+        # Remove frame dimensions from response (not needed in frontend)
+        faces_response = []
+        for face in faces_for_selection:
+            faces_response.append({
+                'index': face['index'],
+                'image': face['image'],  # Thumbnail
+                'x': face['x'], 'y': face['y'], 'w': face['w'], 'h': face['h']
+            })
+        return jsonify({
+            'success': False,
+            'needs_selection': True,
+            'faces': faces_response,
+            'message': f'Found {len(faces_for_selection)} unknown faces. Please select which one to capture.'
+        })
+    elif len(faces_for_selection) == 1:
+        # Single face was captured automatically
         capture_requested = False
-        return jsonify({'success': False, 'message': 'No face detected. Please ensure a face is visible.'})
+        capture_name = ""
+        with detected_faces_lock:
+            detected_faces_for_selection = []
+        return jsonify({'success': True, 'message': f'Face captured for {name}'})
+    elif capture_requested:
+        # Still requested means no unknown faces detected
+        capture_requested = False
+        capture_name = ""
+        return jsonify({'success': False, 'message': 'No unknown faces detected. Please ensure an unknown face is visible.'})
+    else:
+        # Already processed
+        return jsonify({'success': True, 'message': f'Face captured for {name}'})
+
+@app.route('/capture_specific_face', methods=['POST'])
+def capture_specific_face():
+    """Capture a specific face by index from the detected faces"""
+    global capture_requested, capture_name, face_id_counter, detected_faces_for_selection, waiting_for_selection
+    data = request.json
+    name = data.get('name', '').strip()
+    face_index = data.get('face_index')
     
-    return jsonify({'success': True, 'message': f'Face captured for {name}'})
+    if not name:
+        return jsonify({'success': False, 'message': 'Name is required'})
+    
+    if face_index is None:
+        return jsonify({'success': False, 'message': 'Face index is required'})
+    
+    # Get the face data from detected_faces_for_selection
+    # face_index is the array position (0, 1, 2...) in the order faces were sent to frontend
+    with detected_faces_lock:
+        if len(detected_faces_for_selection) == 0:
+            return jsonify({'success': False, 'message': 'No faces available for selection. The faces may have been cleared. Please try capturing again.'})
+        
+        if face_index >= len(detected_faces_for_selection):
+            return jsonify({'success': False, 'message': f'Invalid face index: {face_index} (max: {len(detected_faces_for_selection)-1})'})
+        
+        face_data = detected_faces_for_selection[face_index]
+        print(f"📸 Capturing face at array index {face_index} for '{name}' (total faces available: {len(detected_faces_for_selection)})")
+        # Convert embedding back to numpy array
+        face_embedding = np.array(face_data['embedding'], dtype=np.float32)
+        
+        # Decode the full-size image from base64
+        try:
+            img_bytes = base64.b64decode(face_data['image_full'])
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            face_roi = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if face_roi is None:
+                return jsonify({'success': False, 'message': 'Failed to decode face image'})
+            
+            # Store face
+            enforce_face_limit()  # Remove oldest if at limit
+            face_id_counter += 1
+            known_faces[face_id_counter] = {
+                'name': name,
+                'embedding': face_embedding,
+                'image': face_roi.copy()
+            }
+            save_known_faces()
+            print(f"✓ Captured face #{face_id_counter}: {name} (selected from {len(detected_faces_for_selection)} faces)")
+            
+            capture_requested = False
+            capture_name = ""
+            waiting_for_selection = False  # Clear the flag
+            detected_faces_for_selection = []
+            
+            return jsonify({'success': True, 'message': f'Face captured for {name}'})
+        except Exception as e:
+            print(f"⚠ Error capturing specific face: {e}")
+            return jsonify({'success': False, 'message': f'Error capturing face: {str(e)}'})
 
 @app.route('/known_faces', methods=['GET'])
 def get_known_faces():
