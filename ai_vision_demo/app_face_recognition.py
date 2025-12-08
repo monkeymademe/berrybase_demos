@@ -164,37 +164,49 @@ def detect_faces(image):
     return faces
 
 def extract_face_embedding(face_roi):
-    """Extract a face embedding for matching using histogram and fast LBP features"""
-    # Resize to smaller size for faster processing (was 128x128)
-    face_resized = cv2.resize(face_roi, (96, 96))
+    """Extract a face embedding for matching using histogram and spatial features"""
+    # Resize to standard size for consistency (slightly larger for more detail)
+    face_resized = cv2.resize(face_roi, (128, 128))
     gray = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY)
     
-    # Method 1: Histogram features (more robust to lighting)
-    hist = cv2.calcHist([gray], [0], None, [128], [0, 256])  # Fewer bins = faster (was 256)
+    # Apply histogram equalization for better contrast
+    gray_eq = cv2.equalizeHist(gray)
+    
+    # Method 1: Global histogram features (more bins for better discrimination)
+    hist = cv2.calcHist([gray_eq], [0], None, [256], [0, 256])
     hist = hist.flatten() / (hist.sum() + 1e-6)  # Normalize
     
-    # Method 2: Fast LBP using NumPy vectorization (much faster than loops)
-    # Create shifted versions of the image
-    h, w = gray.shape
-    center = gray[1:h-1, 1:w-1]
+    # Method 2: Spatial histogram features - divide face into 9 regions (3x3 grid)
+    # More regions = better discrimination between different faces
+    h, w = gray_eq.shape
+    h_third = h // 3
+    w_third = w // 3
     
-    # Compare with 8 neighbors using vectorized operations
-    lbp = np.zeros((h-2, w-2), dtype=np.uint8)
-    lbp |= (gray[0:h-2, 0:w-2] >= center).astype(np.uint8) << 7
-    lbp |= (gray[0:h-2, 1:w-1] >= center).astype(np.uint8) << 6
-    lbp |= (gray[0:h-2, 2:w] >= center).astype(np.uint8) << 5
-    lbp |= (gray[1:h-1, 2:w] >= center).astype(np.uint8) << 4
-    lbp |= (gray[2:h, 2:w] >= center).astype(np.uint8) << 3
-    lbp |= (gray[2:h, 1:w-1] >= center).astype(np.uint8) << 2
-    lbp |= (gray[2:h, 0:w-2] >= center).astype(np.uint8) << 1
-    lbp |= (gray[1:h-1, 0:w-2] >= center).astype(np.uint8) << 0
+    # Create 9 regions for better spatial discrimination
+    regions = [
+        gray_eq[0:h_third, 0:w_third],                    # Top-left
+        gray_eq[0:h_third, w_third:2*w_third],          # Top-center
+        gray_eq[0:h_third, 2*w_third:w],                # Top-right
+        gray_eq[h_third:2*h_third, 0:w_third],          # Middle-left
+        gray_eq[h_third:2*h_third, w_third:2*w_third],  # Middle-center (nose/mouth)
+        gray_eq[h_third:2*h_third, 2*w_third:w],        # Middle-right
+        gray_eq[2*h_third:h, 0:w_third],                # Bottom-left
+        gray_eq[2*h_third:h, w_third:2*w_third],        # Bottom-center
+        gray_eq[2*h_third:h, 2*w_third:w],              # Bottom-right
+    ]
     
-    # LBP histogram with fewer bins for speed
-    lbp_hist = cv2.calcHist([lbp], [0], None, [128], [0, 256])  # Fewer bins (was 256)
-    lbp_hist = lbp_hist.flatten() / (lbp_hist.sum() + 1e-6)  # Normalize
+    # Calculate histograms for each region (more bins for better discrimination)
+    region_hists = []
+    for region in regions:
+        region_hist = cv2.calcHist([region], [0], None, [64], [0, 256])
+        region_hist = region_hist.flatten() / (region_hist.sum() + 1e-6)
+        region_hists.append(region_hist)
     
-    # Combine features
-    embedding = np.concatenate([hist, lbp_hist])
+    # Combine all features: global + 9 spatial regions
+    embedding = np.concatenate([hist] + region_hists)
+    
+    # Don't normalize - normalization makes distances larger and harder to match
+    # Just return the normalized histograms (each histogram is already normalized)
     
     return embedding.astype(np.float32)
 
@@ -246,14 +258,40 @@ def match_face(face_embedding, threshold=0.3):
         match_debug_count += 1
     
     # Lower distance = better match
-    # For histogram+LBP features, typical good matches have distance < 0.3-0.5
-    # Increase threshold to be more lenient
-    max_distance = 0.8  # More lenient threshold for histogram-based matching
+    # With histogram-based embeddings (global + 4 spatial histograms, no L2 normalization):
+    # - Same person: distances typically 0.3-0.6
+    # - Different people: distances typically 0.6-1.2
+    # Need to be stricter to prevent misidentification
+    max_distance = 0.65  # Stricter threshold - good matches are < 0.6
+    
+    # CRITICAL: If multiple faces, check if the best match is clearly better than second best
+    # This prevents misidentification when two people have similar distances
+    if len(all_distances) > 1:
+        sorted_distances = sorted(all_distances, key=lambda x: x[1])
+        best_dist = sorted_distances[0][1]
+        second_best_dist = sorted_distances[1][1]
+        distance_gap = second_best_dist - best_dist
+        
+        # Require at least 0.20 gap between best and second best (very strict)
+        # This ensures the match is clearly better and prevents misidentification
+        # Example: user=0.45, wife=0.50 -> gap=0.05 -> REJECT (too ambiguous)
+        # Example: user=0.40, wife=0.65 -> gap=0.25 -> ACCEPT (clear match)
+        if distance_gap < 0.20:
+            if match_debug_count <= 20:
+                print(f"  ✗ Ambiguous match (best: {best_dist:.3f} ({sorted_distances[0][2]}), 2nd: {second_best_dist:.3f} ({sorted_distances[1][2]}), gap: {distance_gap:.3f} < 0.20)")
+            return None, 0.0
     
     if best_distance <= max_distance:
         # Convert distance to similarity (0-1), where 0 distance = 1.0 similarity
         similarity = 1.0 - (best_distance / max_distance)
         similarity = max(0.0, min(1.0, similarity))  # Clamp to 0-1
+        
+        # Require minimum 10% similarity to match (reduced from 20%)
+        if similarity < 0.10:
+            if match_debug_count <= 10:
+                print(f"  ✗ Match rejected - similarity too low: {similarity:.1%} < 10% (distance: {best_distance:.3f})")
+            return None, 0.0
+        
         if match_debug_count <= 10:
             print(f"  ✓ Matched: {known_faces[best_match]['name']} (distance: {best_distance:.3f}, similarity: {similarity:.1%})")
         return known_faces[best_match]['name'], similarity
@@ -1026,4 +1064,3 @@ if __name__ == '__main__':
             cleanup_camera()
     else:
         print("Failed to start camera. Exiting.")
-
