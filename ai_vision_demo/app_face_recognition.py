@@ -399,8 +399,8 @@ def start_camera():
         return False
     
     try:
-        # Configure camera
-        video_w, video_h = 1280, 720  # HD resolution
+        # Configure camera - Try Full HD (1920x1080) first, then fall back to HD (1280x720), then 960x720
+        video_w, video_h = 1920, 1080
         
         main = {'size': (video_w, video_h), 'format': 'RGB888'}
         controls = {'FrameRate': 30}
@@ -408,14 +408,22 @@ def start_camera():
         try:
             config = picam2.create_video_configuration(main, controls=controls)
             picam2.configure(config)
-            print(f"✓ Camera configured: {video_w}x{video_h} (HD)")
+            print(f"✓ Camera configured: {video_w}x{video_h} (Full HD)")
         except Exception as e:
-            print(f"⚠ HD resolution not supported, trying 960x720: {e}")
-            video_w, video_h = 960, 720
+            print(f"⚠ Full HD resolution not supported, trying HD (1280x720): {e}")
+            video_w, video_h = 1280, 720
             main = {'size': (video_w, video_h), 'format': 'RGB888'}
-            config = picam2.create_video_configuration(main, controls=controls)
-            picam2.configure(config)
-            print(f"✓ Camera configured: {video_w}x{video_h}")
+            try:
+                config = picam2.create_video_configuration(main, controls=controls)
+                picam2.configure(config)
+                print(f"✓ Camera configured: {video_w}x{video_h} (HD)")
+            except Exception as e2:
+                print(f"⚠ HD resolution not supported, trying 960x720: {e2}")
+                video_w, video_h = 960, 720
+                main = {'size': (video_w, video_h), 'format': 'RGB888'}
+                config = picam2.create_video_configuration(main, controls=controls)
+                picam2.configure(config)
+                print(f"✓ Camera configured: {video_w}x{video_h}")
         
         picam2.start()
         print("✓ Camera started")
@@ -708,54 +716,67 @@ def index():
             min-height: 100vh;
             padding: 20px;
             color: var(--text-primary);
+            transition: background 0.3s ease;
         }
-
+        html[data-theme="dark"] body {
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 90%, var(--bg-gradient-end) 100%);
+        }
         .container {
-            max-width: 1400px;
+            max-width: 100%;
             margin: 0 auto;
+            padding: 0 20px;
         }
-
-        .header {
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            gap: 20px;
+        }
+        h1 {
+            flex: 1;
             text-align: center;
-            margin-bottom: 30px;
-            color: var(--text-white);
-        }
-
-        .header h1 {
+            color: white;
             font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            margin: 0;
         }
-
-        .video-container {
-            background: var(--card-bg);
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        .feed-container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
             margin-bottom: 20px;
         }
-
-        .video-wrapper {
-            position: relative;
-            width: 100%;
-            max-width: 1280px;
-            margin: 0 auto;
-            background: #000;
-            border-radius: 10px;
-            overflow: hidden;
+        .feed-description {
+            width: 20%;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            color: var(--text-primary);
+            font-size: 1.1em;
+            line-height: 1.5;
         }
-
+        .video-container {
+            flex: 1;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
         img {
             width: 100%;
             height: auto;
             display: block;
+            border-radius: 10px;
         }
 
         .controls {
             background: var(--card-bg);
             border-radius: 15px;
             padding: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             margin-bottom: 20px;
         }
 
@@ -787,12 +808,11 @@ def index():
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform 0.2s;
         }
 
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
 
         button:active {
@@ -803,7 +823,6 @@ def index():
             background: var(--card-bg);
             border-radius: 15px;
             padding: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
         }
 
         .known-faces h2 {
@@ -857,31 +876,44 @@ def index():
         }
 
         .theme-toggle {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.2);
+            background: transparent;
             border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            cursor: pointer;
+            padding: 0;
+            width: auto;
+            height: auto;
             display: flex;
             align-items: center;
             justify-content: center;
-            backdrop-filter: blur(10px);
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+            white-space: nowrap;
+        }
+        .theme-toggle:hover {
+            opacity: 0.7;
+        }
+        .theme-toggle svg {
+            width: 28px;
+            height: 28px;
+            fill: white;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🎭 Face Recognition Camera</h1>
-            <p>Detect, capture, and recognize faces in real-time</p>
+        <div class="header-row">
+            <div></div>
+            <h1>Face Recognition Camera</h1>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+                <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278"/>
+                </svg>
+            </button>
         </div>
-
-        <div class="video-container">
-            <div class="video-wrapper">
+        <div class="feed-container">
+            <div class="feed-description">
+                <p>Detect, capture, and recognize faces in real-time.</p>
+            </div>
+            <div class="video-container">
                 <img src="{{ url_for('video_feed') }}" alt="Video Stream">
             </div>
         </div>
@@ -889,8 +921,8 @@ def index():
         <div class="controls">
             <div class="control-group">
                 <input type="text" id="personName" placeholder="Enter person's name..." />
-                <button onclick="captureFace()">📸 Capture Face</button>
-                <button onclick="refreshFaces()">🔄 Refresh List</button>
+                <button onclick="captureFace()">Capture Face</button>
+                <button onclick="refreshFaces()">Refresh List</button>
             </div>
             <div id="status"></div>
         </div>
@@ -902,10 +934,6 @@ def index():
             </div>
         </div>
     </div>
-
-    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
-        <svg id="themeIcon" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"></svg>
-    </button>
 
     <script>
         function captureFace() {
@@ -923,15 +951,15 @@ def index():
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showStatus(`✓ Face captured: ${name}`, 'success');
+                    showStatus(`Face captured: ${name}`, 'success');
                     document.getElementById('personName').value = '';
                     setTimeout(refreshFaces, 500);
                 } else {
-                    showStatus(`✗ Error: ${data.message}`, 'error');
+                    showStatus(`Error: ${data.message}`, 'error');
                 }
             })
             .catch(error => {
-                showStatus(`✗ Error: ${error.message}`, 'error');
+                showStatus(`Error: ${error.message}`, 'error');
             });
         }
 

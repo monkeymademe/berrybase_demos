@@ -335,8 +335,8 @@ def start_camera():
         # Use 1280x720 (HD) or 1920x1080 (Full HD) for main stream
         # Lores stays at 640x640 for Hailo inference
         
-        # Try higher resolution first, fall back if not supported
-        video_w, video_h = 1280, 720  # HD resolution for display
+        # Try Full HD (1920x1080) first, then fall back to HD (1280x720), then 960x720
+        video_w, video_h = 1920, 1080
         
         main = {'size': (video_w, video_h), 'format': 'RGB888'}
         lores = {'size': (model_w, model_h), 'format': 'RGB888'}  # Must match model input (640x640)
@@ -345,15 +345,22 @@ def start_camera():
         try:
             config = picam2.create_video_configuration(main, lores=lores, controls=controls)
             picam2.configure(config)
-            print(f"✓ Camera configured: main={video_w}x{video_h} (HD), lores={model_w}x{model_h}")
+            print(f"✓ Camera configured: main={video_w}x{video_h} (Full HD), lores={model_w}x{model_h}")
         except Exception as e:
-            # Fall back to lower resolution if HD not supported
-            print(f"⚠ HD resolution not supported, trying 960x720: {e}")
-            video_w, video_h = 960, 720
+            print(f"⚠ Full HD resolution not supported, trying HD (1280x720): {e}")
+            video_w, video_h = 1280, 720
             main = {'size': (video_w, video_h), 'format': 'RGB888'}
-            config = picam2.create_video_configuration(main, lores=lores, controls=controls)
-            picam2.configure(config)
-            print(f"✓ Camera configured: main={video_w}x{video_h}, lores={model_w}x{model_h}")
+            try:
+                config = picam2.create_video_configuration(main, lores=lores, controls=controls)
+                picam2.configure(config)
+                print(f"✓ Camera configured: main={video_w}x{video_h} (HD), lores={model_w}x{model_h}")
+            except Exception as e2:
+                print(f"⚠ HD resolution not supported, trying 960x720: {e2}")
+                video_w, video_h = 960, 720
+                main = {'size': (video_w, video_h), 'format': 'RGB888'}
+                config = picam2.create_video_configuration(main, lores=lores, controls=controls)
+                picam2.configure(config)
+                print(f"✓ Camera configured: main={video_w}x{video_h}, lores={model_w}x{model_h}")
         
         picam2.start()
         print("✓ Camera started")
@@ -570,47 +577,25 @@ def index():
         }
 
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        h1 {
-            text-align: center;
-            color: var(--text-white);
-            margin-bottom: 30px;
-            font-size: 2.5em;
-            font-weight: 600;
-        }
-
-        .video-container {
-            text-align: center;
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            transition: background 0.3s ease;
-        }
-
-        img {
             max-width: 100%;
-            height: auto;
-            border: 2px solid var(--border-color);
-            border-radius: 10px;
-            transition: border-color 0.3s ease;
+            margin: 0 auto;
+            padding: 0 20px;
         }
-
-        .info {
-            margin-top: 20px;
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            gap: 20px;
+        }
+        h1 {
+            flex: 1;
             text-align: center;
             color: var(--text-white);
-            opacity: 0.9;
-            font-size: 0.9em;
+            font-size: 2.5em;
+            margin: 0;
         }
-
         .theme-toggle {
-            position: fixed;
-            top: calc(20px + 1.25em);
-            right: 20px;
             background: transparent;
             border: none;
             padding: 0;
@@ -621,35 +606,68 @@ def index():
             justify-content: center;
             cursor: pointer;
             transition: opacity 0.3s ease;
-            z-index: 1000;
-            transform: translateY(-50%);
+            white-space: nowrap;
         }
-
         .theme-toggle:hover {
             opacity: 0.7;
         }
-
         .theme-toggle svg {
             width: 28px;
             height: 28px;
             fill: white;
         }
+        .feed-container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+        }
+        .feed-description {
+            width: 20%;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            color: var(--text-primary);
+            font-size: 1.1em;
+            line-height: 1.5;
+        }
+        .video-container {
+            flex: 1;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        img {
+            width: 100%;
+            height: auto;
+            display: block;
+            border: 2px solid var(--border-color);
+            border-radius: 10px;
+        }
     </style>
 </head>
 <body>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
-        <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278"/>
-        </svg>
-    </button>
-
     <div class="container">
-        <h1>🤖 AI Object Detection Camera Stream</h1>
-        <div class="video-container">
-            <img src="{{ url_for('video_feed') }}" alt="Video Stream">
+        <div class="header-row">
+            <div></div>
+            <h1>🤖 AI Object Detection Camera Stream</h1>
+            <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+                <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M6 .278a.77.77 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277q.792-.001 1.533-.16a.79.79 0 0 1 .81.316.73.73 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.75.75 0 0 1 6 .278"/>
+                </svg>
+            </button>
         </div>
-        <div class="info">
-            <p>Detected objects are shown with green bounding boxes and labels.</p>
+        <div class="feed-container">
+            <div class="feed-description">
+                <p>Detected objects are shown with green bounding boxes and labels.</p>
+            </div>
+            <div class="video-container">
+                <img src="{{ url_for('video_feed') }}" alt="Video Stream">
+            </div>
         </div>
     </div>
 
