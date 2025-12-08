@@ -444,6 +444,8 @@ def start_camera():
             last_recognition_frame = -1
             recognition_skip_frames = 2  # Only recognize every N frames (0 = every frame, 2 = every 3rd frame)
             face_names = {}  # Store recognition results to reuse across frames
+            # Track faces by position to maintain consistent labeling
+            face_tracker = {}  # {(center_x, center_y, size): (name, similarity, frame_count)}
             
             # Write test frame
             test_frame = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -502,15 +504,101 @@ def start_camera():
                     
                     # Update recognition results only when needed
                     if should_recognize:
-                        face_names = {}  # Clear old results
+                        # Match each detected face to a tracked face by position FIRST
+                        # This ensures consistent labeling even if detection order changes
+                        matched_indices = set()
+                        updated_tracker = {}
+                        
                         for idx, (x, y, w, h) in enumerate(faces):
                             face_roi = frame_bgr[y:y+h, x:x+w]
                             face_embedding = extract_face_embedding(face_roi)
                             
+                            # Calculate face center and size for tracking
+                            center_x = x + w // 2
+                            center_y = y + h // 2
+                            face_size = w * h
+                            
+                            # Find closest tracked face (within reasonable distance)
+                            matched_tracker_key = None
+                            min_distance = float('inf')
+                            for (tx, ty, ts), (tname, tsim, tframe) in face_tracker.items():
+                                # Calculate distance between face centers
+                                dist = np.sqrt((center_x - tx)**2 + (center_y - ty)**2)
+                                # Also consider size similarity
+                                size_diff = abs(face_size - ts) / max(face_size, ts)
+                                # Combined distance metric (stricter matching)
+                                combined_dist = dist + size_diff * 200
+                                
+                                # Match if within 80 pixels and similar size (stricter threshold)
+                                if combined_dist < 100 and combined_dist < min_distance:
+                                    min_distance = combined_dist
+                                    matched_tracker_key = (tx, ty, ts)
+                            
                             # Match to known faces
                             name, similarity = match_face(face_embedding)
-                            face_names[idx] = (name, similarity)
+                            
+                            # Update tracker: use matched position or create new entry
+                            if matched_tracker_key:
+                                # Update existing tracked face - ALWAYS use the tracked name (persistent labeling)
+                                old_name, old_sim, old_frame = face_tracker[matched_tracker_key]
+                                
+                                # Only update the name if:
+                                # 1. New recognition is confident (similarity > 50%)
+                                # 2. New recognition matches the old name (same person)
+                                # 3. Otherwise, keep the old name (prevent label swapping)
+                                if name and similarity > 0.50 and name == old_name:
+                                    # Update with new similarity but keep same name
+                                    updated_tracker[(center_x, center_y, face_size)] = (old_name, similarity, frame_count)
+                                    face_names[idx] = (old_name, similarity)
+                                else:
+                                    # Keep old name and similarity (prevent label swapping)
+                                    updated_tracker[(center_x, center_y, face_size)] = (old_name, old_sim, frame_count)
+                                    face_names[idx] = (old_name, old_sim)
+                                matched_indices.add(idx)
+                            else:
+                                # New face - add to tracker only if we have a confident match
+                                if name and similarity > 0.30:  # Require at least 30% similarity for new faces
+                                    updated_tracker[(center_x, center_y, face_size)] = (name, similarity, frame_count)
+                                    face_names[idx] = (name, similarity)
+                                    matched_indices.add(idx)
+                                else:
+                                    face_names[idx] = (None, 0.0)
+                        
+                        # Update tracker with new positions
+                        face_tracker = updated_tracker
+                        
+                        # Clean up old tracked faces (not seen for 30 frames)
+                        face_tracker = {
+                            k: v for k, v in face_tracker.items()
+                            if (frame_count - v[2]) < 30
+                        }
+                        
                         last_recognition_frame = frame_count
+                    else:
+                        # When not recognizing, use tracked faces for consistent labeling
+                        face_names = {}
+                        for idx, (x, y, w, h) in enumerate(faces):
+                            center_x = x + w // 2
+                            center_y = y + h // 2
+                            face_size = w * h
+                            
+                            # Find closest tracked face
+                            matched_tracker_key = None
+                            min_distance = float('inf')
+                            for (tx, ty, ts), (tname, tsim, tframe) in face_tracker.items():
+                                dist = np.sqrt((center_x - tx)**2 + (center_y - ty)**2)
+                                size_diff = abs(face_size - ts) / max(face_size, ts)
+                                combined_dist = dist + size_diff * 200
+                                
+                                if combined_dist < 100 and combined_dist < min_distance:
+                                    min_distance = combined_dist
+                                    matched_tracker_key = (tx, ty, ts)
+                            
+                            if matched_tracker_key:
+                                tname, tsim, tframe = face_tracker[matched_tracker_key]
+                                face_names[idx] = (tname, tsim)
+                            else:
+                                face_names[idx] = (None, 0.0)
                     
                     # Draw faces with recognition results
                     for idx, (x, y, w, h) in enumerate(faces):
