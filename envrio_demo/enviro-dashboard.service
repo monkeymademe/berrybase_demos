@@ -1,0 +1,18 @@
+[Unit]
+Description=Enviro Indoor Sensor Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/berrybase_demos/envrio_demo
+ExecStart=/usr/bin/python3 /home/pi/berrybase_demos/envrio_demo/web_app.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
+

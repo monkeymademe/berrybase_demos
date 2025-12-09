@@ -1,0 +1,12 @@
+[Unit]
+Description=Enviro Indoor Dashboard Database Cleanup
+After=network.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/berrybase_demos/envrio_demo
+ExecStart=/usr/bin/python3 /home/pi/berrybase_demos/envrio_demo/cleanup_database.py
+StandardOutput=journal
+StandardError=journal
+
