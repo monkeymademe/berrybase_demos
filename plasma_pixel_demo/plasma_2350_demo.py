@@ -3,12 +3,13 @@ from time import sleep, time
 import random
 
 num_pixels = 24
-brightness = 0.3  # Adjust brightness (0.0 to 1.0, where 1.0 is full brightness)
-primary_color = (62, 145, 190)  # RGB color #3e91be
+brightness = 1.0# Adjust brightness (0.0 to 1.0, where 1.0 is full brightness)
+primary_color = (190, 65, 110)  # RGB color - adjusted to reduce redness
 animation_duration = 10  # Duration in seconds for each animation
 
 # Initialize the WS2812 LED strip - Plasma 2350 uses dedicated pins via screw terminals
-led_strip = plasma.WS2812(num_pixels, color_order=plasma.COLOR_ORDER_RGB)
+# GRB color order is correct for this LED strip
+led_strip = plasma.WS2812(num_pixels, color_order=plasma.COLOR_ORDER_GRB)
 led_strip.start()
 
 
@@ -272,4 +273,5 @@ if __name__ == "__main__":
         # Randomly select an animation
         selected_animation = animations[random.randint(0, len(animations) - 1)]
         selected_animation(animation_duration)
+
 
