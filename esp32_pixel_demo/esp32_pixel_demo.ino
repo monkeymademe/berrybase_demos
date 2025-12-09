@@ -2,7 +2,7 @@
 
 // Configuration
 #define NUM_PIXELS 24
-#define BRIGHTNESS 0.3  // Adjust brightness (0.0 to 1.0, where 1.0 is full brightness)
+#define BRIGHTNESS 1  // Adjust brightness (0.0 to 1.0, where 1.0 is full brightness)
 #define STRIP_PIN 2      // ESP32 GPIO pin (common pins: 2, 4, 5, 12, 13, 14, 15, 18, 19, 21, 22, 23)
 #define ANIMATION_DURATION 10000  // Duration in milliseconds for each animation
 

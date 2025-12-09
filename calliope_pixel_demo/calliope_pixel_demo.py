@@ -41,14 +41,23 @@ except ImportError:
         pass
 
 num_pixels = 24
-brightness = 0.3  # Adjust brightness (0.0 to 1.0, where 1.0 is full brightness)
-primary_color = (62, 145, 190)  # RGB color #3e91be
+brightness = 1  # Adjust brightness (0.0 to 1.0, where 1.0 is full brightness)
+primary_color = (205, 60, 101)  # RGB color #cd3c65
 animation_duration = 10  # Duration in seconds for each animation
 
 # Calliope mini pin configuration
 # Use pin0, pin1, pin2, etc. from calliopemini module
 # Change pin0 to pin1, pin2, etc. based on your wiring
-my_strip = neopixel.NeoPixel(pin0, num_pixels)
+# Try to initialize with brightness parameter if supported
+try:
+    # Some NeoPixel implementations support brightness in constructor
+    my_strip = neopixel.NeoPixel(pin0, num_pixels, brightness=int(brightness * 255))
+except TypeError:
+    # If brightness parameter not supported, initialize without it
+    my_strip = neopixel.NeoPixel(pin0, num_pixels)
+    # Try setting brightness attribute if it exists
+    if hasattr(my_strip, 'brightness'):
+        my_strip.brightness = brightness
 
 # Compatibility helper for different NeoPixel implementations
 # Some use .show(), others use .write()
@@ -72,7 +81,10 @@ def wheel(pos):
 
 def apply_brightness(color, brightness):
     """Scale RGB color by brightness factor."""
-    return tuple(int(c * brightness) for c in color)
+    # Ensure brightness is between 0.0 and 1.0
+    brightness = max(0.0, min(1.0, float(brightness)))
+    # Scale each color component and ensure it's an integer between 0-255
+    return tuple(max(0, min(255, int(c * brightness))) for c in color)
 
 def animation_rainbow(duration):
     """Rotating rainbow animation across all LEDs."""
