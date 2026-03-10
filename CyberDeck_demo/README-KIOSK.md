@@ -1,6 +1,6 @@
 # Raspberry Pi Kiosk Mode Setup Guide
 
-This guide will help you set up your Raspberry Pi running Debian Trixie to automatically display the CyberDeck demo in fullscreen kiosk mode.
+This guide will help you set up your Raspberry Pi running Debian Trixie to automatically display the CyberDeck demo. Touch-screen friendly: **Tap anywhere once** to enter fullscreen, then **tap the System box** to exit (access desktop) or return.
 
 ## Quick Setup (Easiest Method)
 
@@ -33,7 +33,7 @@ This guide will help you set up your Raspberry Pi running Debian Trixie to autom
    sudo reboot
    ```
 
-After reboot, the page should automatically open in fullscreen kiosk mode!
+After reboot, the demo opens; tap once to enter fullscreen, then use the System box to toggle.
 
 ## Manual Setup (Alternative Method)
 
@@ -59,7 +59,7 @@ User=pi
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/pi/.Xauthority
 ExecStartPre=/bin/sleep 3
-ExecStart=chromium --noerrdialogs --disable-infobars --kiosk --app=file:///home/pi/CyberDeck_demo/index.html
+ExecStart=chromium --noerrdialogs --disable-infobars --start-fullscreen --app=file:///home/pi/CyberDeck_demo/index.html
 Restart=on-failure
 RestartSec=5
 
@@ -67,7 +67,7 @@ RestartSec=5
 WantedBy=graphical.target
 ```
 
-**Important:** Replace `pi` with your username and update the file path if needed.
+**Important:** Replace `pi` with your username and update the file path if your CyberDeck_demo is elsewhere.
 
 ### 3. Enable and start the service
 ```bash
@@ -139,8 +139,15 @@ systemctl --user enable xscreensaver-disable.service
 - **View logs:** `journalctl -u cyberdeck-kiosk.service -f`
 - **Disable on boot:** `sudo systemctl disable cyberdeck-kiosk.service`
 
+## Touch Screen: Accessing the System (No Keyboard Needed)
+
+1. **First tap anywhere** — enters fullscreen (required by the browser once per session)
+2. **Tap the System box** (top-right) — exits fullscreen so you can use the desktop
+3. **Tap the System box again** — returns to fullscreen
+
 ## Exiting Kiosk Mode
 
+- **Touch:** Use the System box to exit fullscreen, then close from the taskbar
 - Press `Alt+F4` to close Chromium
 - Press `Ctrl+Alt+F1` to switch to a terminal (F7 to return to GUI)
 - SSH into the Pi and stop the service: `sudo systemctl stop cyberdeck-kiosk.service`
@@ -151,7 +158,7 @@ systemctl --user enable xscreensaver-disable.service
 - Check logs: `journalctl -u cyberdeck-kiosk.service -n 50`
 - Make sure you're logged into the graphical session
 - Verify the HTML file path is correct
-- Try running Chromium manually: `chromium --kiosk --app=file:///home/pi/CyberDeck_demo/index.html`
+- Try running Chromium manually: `chromium --start-fullscreen --app=file:///home/pi/CyberDeck_demo/index.html`
 
 ### Screen goes blank
 - Check that screen blanking is disabled

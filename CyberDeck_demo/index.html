@@ -85,6 +85,10 @@
     top: 10px;
     right: 410px;
   }
+  .status-panel#statusTopRight {
+    cursor: pointer;
+    min-height: 44px;
+  }
   .status-panel.bottom-left {
     bottom: 10px;
     left: 10px;
@@ -181,7 +185,7 @@
 <body>
 <canvas id="net"></canvas>
 <div class="overlay" id="info"></div>
-<div class="status-panel top-right" id="statusTopRight">
+<div class="status-panel top-right" id="statusTopRight" title="Tap to toggle fullscreen, long-press to exit kiosk">
   <h3>System</h3>
   <div class="stat">
     <span class="stat-label">Nodes:</span>
@@ -661,6 +665,55 @@ function draw() {
 }
 
 document.getElementById("info").innerHTML = `NODE ID: ${systemHostname}<span class="cursor"></span>`;
+
+// System box: quick tap toggles fullscreen, long-press (1.5s) tries to exit kiosk
+(function() {
+  const el = document.documentElement;
+  const sys = document.getElementById('statusTopRight');
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  const exit = document.exitFullscreen || document.webkitExitFullscreen;
+  const LONG_PRESS_MS = 1500;
+  let longPressTimer, didLongPress;
+  function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+  function enterFullscreen() { req && req.call(el); }
+  function clearTimer() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  }
+  function onLongPress() {
+    clearTimer();
+    didLongPress = true;
+    if (isFullscreen()) {
+      exit && exit.call(document);
+    } else {
+      enterFullscreen();
+      setTimeout(function() { exit && exit.call(document); }, 100);
+    }
+  }
+  function onTap() {
+    if (didLongPress) { didLongPress = false; return; }
+    if (isFullscreen()) exit && exit.call(document);
+    else enterFullscreen();
+  }
+  sys && sys.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    onTap();
+  });
+  sys && sys.addEventListener('touchstart', function() {
+    didLongPress = false;
+    clearTimer();
+    longPressTimer = setTimeout(onLongPress, LONG_PRESS_MS);
+  }, { passive: true });
+  sys && sys.addEventListener('touchend', clearTimer);
+  sys && sys.addEventListener('touchcancel', clearTimer);
+  sys && sys.addEventListener('mousedown', function() {
+    didLongPress = false;
+    clearTimer();
+    longPressTimer = setTimeout(onLongPress, LONG_PRESS_MS);
+  });
+  sys && sys.addEventListener('mouseup', function() { clearTimer(); });
+  sys && sys.addEventListener('mouseleave', function() { clearTimer(); didLongPress = false; });
+})();
 
 // Handle window resize
 window.addEventListener('resize', () => {

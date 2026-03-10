@@ -70,7 +70,7 @@ User=$USER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/$USER/.Xauthority
 ExecStartPre=/bin/sleep 3
-ExecStart=$CHROMIUM_CMD --noerrdialogs --disable-infobars --kiosk --app=file://$HTML_PATH
+ExecStart=$CHROMIUM_CMD --noerrdialogs --disable-infobars --start-fullscreen --app=file://$HTML_PATH
 Restart=on-failure
 RestartSec=5
 
@@ -182,6 +182,7 @@ echo "  Status:        sudo systemctl status cyberdeck-kiosk.service"
 echo "  View logs:     journalctl -u cyberdeck-kiosk.service -f"
 echo "  Disable:       sudo systemctl disable cyberdeck-kiosk.service"
 echo ""
-echo "To exit kiosk mode, press Alt+F4 or Ctrl+Alt+F1 to switch to terminal"
+echo "Touch: Tap once to enter fullscreen, tap System box to exit/access system, tap again to return."
+echo "Keyboard: Alt+F4 to close, Ctrl+Alt+F1 to switch to terminal."
 echo ""
 
